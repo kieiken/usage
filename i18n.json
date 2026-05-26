@@ -1,6 +1,9 @@
 {
   "zh-TW": {
     "panel_default_name": "預設",
+    "panel_matrix": "駭客任務",
+    "panel_win95": "視窗 95",
+    "panel_newspaper": "復古報紙",
     "panel_cloud_observation": "雲圖觀測",
     "panel_aquarium": "午夜水族箱",
     "panel_prism_arcade": "稜鏡街機",
@@ -54,6 +57,9 @@
   },
   "en": {
     "panel_default_name": "Default",
+    "panel_matrix": "Matrix",
+    "panel_win95": "Windows 95",
+    "panel_newspaper": "Newspaper",
     "panel_cloud_observation": "Cloud Observation",
     "panel_aquarium": "Midnight Aquarium",
     "panel_prism_arcade": "Prism Arcade",
@@ -107,6 +113,9 @@
   },
   "zh-CN": {
     "panel_default_name": "默认",
+    "panel_matrix": "黑客任务",
+    "panel_win95": "视窗 95",
+    "panel_newspaper": "复古报纸",
     "panel_cloud_observation": "云图观测",
     "panel_aquarium": "午夜水族箱",
     "panel_prism_arcade": "棱镜街机",
@@ -160,6 +169,9 @@
   },
   "ja": {
     "panel_default_name": "デフォルト",
+    "panel_matrix": "マトリックス",
+    "panel_win95": "Windows 95",
+    "panel_newspaper": "レトロ新聞",
     "panel_cloud_observation": "雲観測",
     "panel_aquarium": "真夜中の水族館",
     "panel_prism_arcade": "プリズムアーケード",
@@ -213,6 +225,9 @@
   },
   "ko": {
     "panel_default_name": "기본",
+    "panel_matrix": "매트릭스",
+    "panel_win95": "Windows 95",
+    "panel_newspaper": "레트로 신문",
     "panel_cloud_observation": "구름 관측",
     "panel_aquarium": "한밤의 수족관",
     "panel_prism_arcade": "프리즘 아케이드",

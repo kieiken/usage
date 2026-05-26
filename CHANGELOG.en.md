@@ -5,7 +5,7 @@
 All notable changes to usage are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [0.11.9] - 2026-05-27
 
 ### Changed
 - Switched the primary README language to Japanese and documented this as a secondary modification for Claude Desktop usage.

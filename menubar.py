@@ -143,9 +143,19 @@ def _group_name(group: int, language: str) -> str:
 
 
 def _panel_title(panel: UsagePanel, language: str) -> str:
-    if panel.id == "classic":
-        return _t(language, "panel_default_name")
-    return panel.display_name
+    key_by_id = {
+        "classic": "panel_default_name",
+        "matrix": "panel_matrix",
+        "win95": "panel_win95",
+        "newspaper": "panel_newspaper",
+        "cloud_observation": "panel_cloud_observation",
+        "aquarium": "panel_aquarium",
+        "prism_arcade": "panel_prism_arcade",
+        "black_hole": "panel_black_hole",
+        "world_cup": "panel_world_cup",
+    }
+    key = key_by_id.get(panel.id)
+    return _t(language, key) if key else panel.display_name
 
 
 _APP_DELEGATE: AppDelegate | None = None

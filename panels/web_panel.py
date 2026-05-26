@@ -152,7 +152,8 @@ class HTMLPanel:
     def build_view(self, delegate: Any) -> NSView:
         if WKUserContentController is None or WKWebViewConfiguration is None:
             raise RuntimeError("pyobjc-framework-WebKit is required to build HTMLPanel")
-        html = _load_panel_html(self.html_filename)
+        language = str(getattr(delegate, "language", "en") or "en")
+        html = _load_panel_html(self.html_filename, language)
         configuration = WKWebViewConfiguration.alloc().init()
         controller = WKUserContentController.alloc().init()
         configuration.setUserContentController_(controller)
@@ -174,7 +175,7 @@ class HTMLPanel:
         return (self.width, self.height)
 
 
-def _load_panel_html(filename: str) -> str:
+def _load_panel_html(filename: str, language: str = "en") -> str:
     bundle = NSBundle.mainBundle()
     html_path: Path | None = None
     if bundle is not None:
@@ -189,6 +190,13 @@ def _load_panel_html(filename: str) -> str:
         html.replace("{{CLAUDE_ICON}}", _data_uri("claude.webp"))
         .replace("{{CODEX_ICON}}", _data_uri("codex.webp"))
         .replace("{{I18N_BUNDLE}}", json.dumps(_load_i18n_bundle(), ensure_ascii=False))
+        .replace('let currentLanguage = "en";', f"let currentLanguage = {json.dumps(language)};")
+        .replace(
+            'let currentLanguage = "zh-TW";',
+            f"let currentLanguage = {json.dumps(language)};",
+        )
+        .replace('language: "en",', f"language: {json.dumps(language)},")
+        .replace('language: "zh-TW",', f"language: {json.dumps(language)},")
     )
 
 

@@ -4,7 +4,7 @@
 
 本檔記錄 usage 所有重要變更。格式參考 [Keep a Changelog](https://keepachangelog.com/)。
 
-## [Unreleased]
+## [0.11.9] - 2026-05-27
 
 ### 変更
 - README の主言語を日本語に変更し、Claude Desktop 向け二次改造版であることを明記。
