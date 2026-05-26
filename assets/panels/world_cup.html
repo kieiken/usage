@@ -1,0 +1,1318 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --pitch: #2e7d32;
+      --pitch-alt: #388e3c;
+      --broadcast: rgba(4, 12, 4, 0.9);
+      --glass: rgba(0, 18, 0, 0.28);
+      --gold: #c9a227;
+      --text: #ffffff;
+      --muted: rgba(255, 255, 255, 0.68);
+      --claude: #f4a261;
+      --codex: #4fc3f7;
+      --warn: #ffd36a;
+      --danger: #ff6b6b;
+      --shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100vh;
+      margin: 0;
+      overflow: hidden;
+      color: var(--text);
+      background: var(--pitch);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      overscroll-behavior: none;
+    }
+
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background:
+        radial-gradient(ellipse at 50% 45%, rgba(255, 255, 255, 0.10), transparent 60%),
+        linear-gradient(180deg, rgba(0, 0, 0, 0.03), rgba(0, 0, 0, 0.18));
+    }
+
+    .pitch-canvas,
+    .ball-canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    .pitch-canvas {
+      z-index: 0;
+    }
+
+    .ball-canvas {
+      z-index: 2;
+    }
+
+    .viewport {
+      position: relative;
+      z-index: 3;
+      width: 100%;
+      height: 100%;
+      padding: 10px;
+      overflow: hidden;
+      isolation: isolate;
+    }
+
+    .wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+    }
+
+    .scoreboard,
+    .standings,
+    .footer {
+      position: relative;
+      overflow: hidden;
+      border-radius: 10px;
+      box-shadow: var(--shadow);
+    }
+
+    .scoreboard {
+      flex: none;
+      padding: 12px 14px;
+      border: 1px solid rgba(201, 162, 39, 0.45);
+      background: var(--broadcast);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    .scoreboard::before,
+    .footer::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(90deg, rgba(201, 162, 39, 0.13), transparent 24%, transparent 76%, rgba(201, 162, 39, 0.1)),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 38%);
+    }
+
+    .broadcast-top {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-height: 20px;
+    }
+
+    .event-title {
+      min-width: 0;
+      font-size: 13px;
+      line-height: 1.15;
+      font-weight: 900;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .live {
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: #ffefef;
+      font-size: 11px;
+      line-height: 1;
+      font-weight: 900;
+      letter-spacing: 0.06em;
+    }
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ff2e2e;
+      box-shadow: 0 0 12px rgba(255, 46, 46, 0.95);
+    }
+
+    .scoreboard-main {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 0 8px;
+    }
+
+    .team {
+      min-width: 0;
+    }
+
+    .team.codex {
+      text-align: right;
+    }
+
+    .team-name {
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      color: rgba(255, 255, 255, 0.60);
+      text-transform: uppercase;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .team-pct {
+      margin-top: 2px;
+      font-size: 38px;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: 0;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .team-pct.claude {
+      color: var(--claude);
+      text-align: left;
+    }
+
+    .team-pct.codex {
+      color: var(--codex);
+      text-align: right;
+    }
+
+    .score-sep {
+      width: 2px;
+      height: 48px;
+      margin: 0 auto;
+      background: rgba(201, 162, 39, 0.7);
+      box-shadow: 0 0 14px rgba(201, 162, 39, 0.45);
+    }
+
+    .duel {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      gap: 5px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .duel + .duel {
+      margin-top: 8px;
+    }
+
+    .duel-label {
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 11px;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .duel-line {
+      display: grid;
+      grid-template-columns: minmax(48px, auto) minmax(0, 1fr) minmax(48px, auto);
+      align-items: center;
+      gap: 7px;
+    }
+
+    .duel-pct {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1;
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .duel-pct.right {
+      text-align: right;
+    }
+
+    .duel-track {
+      display: flex;
+      align-items: stretch;
+      min-width: 0;
+      height: 20px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.42);
+    }
+
+    .duel-fill {
+      flex: none;
+      width: 0%;
+      min-width: 0;
+      max-width: 50%;
+      height: 100%;
+      transition: width 200ms ease-out, background 200ms ease-out;
+    }
+
+    .duel-fill.left {
+      margin-left: auto;
+      border-radius: 999px 0 0 999px;
+      background: var(--claude);
+    }
+
+    .duel-center {
+      width: 2px;
+      flex: none;
+      background: rgba(201, 162, 39, 0.85);
+    }
+
+    .duel-fill.right {
+      margin-right: auto;
+      border-radius: 0 999px 999px 0;
+      background: var(--codex);
+    }
+
+    .reset-line {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      color: rgba(255, 255, 255, 0.58);
+      font-size: 11px;
+      line-height: 1.15;
+      font-weight: 650;
+    }
+
+    .reset-line div {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .reset-line div:last-child {
+      text-align: right;
+    }
+
+    .reset-line [data-warning="true"] {
+      color: var(--warn);
+    }
+
+    .goal-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 10;
+      display: none;
+      place-items: center;
+      border-radius: inherit;
+      pointer-events: none;
+      opacity: 0;
+      background:
+        radial-gradient(circle at 50% 50%, rgba(255, 215, 0, 0.45), rgba(255, 200, 0, 0.18) 46%, transparent 72%);
+      transition: opacity 0.4s ease;
+    }
+
+    .goal-overlay[data-visible="true"] {
+      display: grid;
+      opacity: 1;
+    }
+
+    .goal-text {
+      color: #ffd700;
+      font-size: 30px;
+      font-weight: 900;
+      line-height: 1;
+      text-shadow: 0 0 20px gold;
+    }
+
+    .standings {
+      flex: none;
+      padding: 12px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: var(--glass);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+    }
+
+    .standings::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.07), transparent 34%),
+        repeating-linear-gradient(90deg, transparent 0 34px, rgba(255, 255, 255, 0.035) 34px 35px);
+    }
+
+    .section-head {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .section-title {
+      min-width: 0;
+      color: var(--gold);
+      font-size: 11px;
+      font-weight: 900;
+      line-height: 1.2;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    button {
+      border: 1px solid rgba(201, 162, 39, 0.38);
+      border-radius: 999px;
+      min-height: 28px;
+      padding: 0 11px;
+      color: var(--text);
+      background: rgba(4, 12, 4, 0.72);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 850;
+      white-space: nowrap;
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    .range-chip {
+      flex: none;
+      min-height: 26px;
+      padding: 0 10px;
+    }
+
+    [data-project-list] {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      gap: 10px;
+    }
+
+    .project-row {
+      display: grid;
+      grid-template-columns: 20px minmax(0, 1fr) minmax(80px, auto) minmax(70px, auto);
+      align-items: center;
+      gap: 8px;
+      min-height: 28px;
+    }
+
+    .rank {
+      display: grid;
+      place-items: center;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      color: #08220b;
+      background: rgba(255, 255, 255, 0.95);
+      font-size: 11px;
+      font-weight: 900;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+    }
+
+    .project-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: #ffffff;
+      font-size: 13px;
+      font-weight: 850;
+      text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+    }
+
+    .project-meter {
+      position: relative;
+      height: 7px;
+      min-width: 80px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.14);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+    }
+
+    .project-meter span {
+      display: block;
+      width: 0%;
+      max-width: 100%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #c9a227, #f0c94a);
+      box-shadow: 0 0 8px rgba(201, 162, 39, 0.65);
+    }
+
+    .project-tokens {
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 900;
+      text-align: right;
+      white-space: nowrap;
+      text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+    }
+
+    .empty-state {
+      position: relative;
+      z-index: 1;
+      padding: 12px 0 2px;
+      color: rgba(255, 255, 255, 0.68);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .footer {
+      flex: none;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      min-height: 54px;
+      padding: 10px 12px;
+      border: 1px solid rgba(201, 162, 39, 0.25);
+      background: rgba(4, 12, 4, 0.85);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    .meta {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 9px;
+      min-width: 0;
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 12px;
+      font-weight: 750;
+      line-height: 1.2;
+    }
+
+    .actions {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      gap: 6px;
+    }
+
+    .action[data-action="install"] {
+      display: none;
+    }
+
+    .action[data-action="install"][data-visible="true"] {
+      display: inline-block;
+    }
+
+    @media (max-width: 340px) {
+      .viewport {
+        padding: 8px;
+      }
+
+      .scoreboard,
+      .standings,
+      .footer {
+        padding-left: 10px;
+        padding-right: 10px;
+      }
+
+      .team-pct {
+        font-size: 36px;
+      }
+
+      .duel-line {
+        grid-template-columns: 34px minmax(0, 1fr) 34px;
+        gap: 6px;
+      }
+
+      .project-row {
+        grid-template-columns: 20px minmax(0, 1fr) minmax(56px, auto) minmax(58px, auto);
+        gap: 6px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <canvas class="pitch-canvas" aria-hidden="true"></canvas>
+  <canvas class="ball-canvas" aria-hidden="true"></canvas>
+
+  <div class="viewport">
+    <main class="wrap">
+      <section class="scoreboard">
+        <div class="goal-overlay" data-goal-overlay>
+          <div class="goal-text">⚽ GOAL!</div>
+        </div>
+
+        <div class="broadcast-top">
+          <div class="event-title">⚽ USAGE 2026</div>
+          <div style="display:flex;align-items:center;gap:8px;flex:none;">
+            <div class="live"><span class="live-dot"></span><span>LIVE</span></div>
+            <button style="border:1px solid rgba(201,162,39,0.55);background:rgba(4,12,4,0.72);color:#fff;font:inherit;font-size:12px;font-weight:700;min-height:26px;border-radius:999px;padding:0 10px;white-space:nowrap;" data-action="switch" data-i18n="switch_panel">Switch Panel</button>
+          </div>
+        </div>
+
+        <div class="scoreboard-main">
+          <div class="team claude">
+            <div class="team-name" data-i18n="claude_name">Claude Code</div>
+            <div class="team-pct claude" id="score-claude">--</div>
+          </div>
+          <div class="score-sep" aria-hidden="true"></div>
+          <div class="team codex">
+            <div class="team-name" data-i18n="codex_name">Codex</div>
+            <div class="team-pct codex" id="score-codex">--</div>
+          </div>
+        </div>
+
+        <div class="duel" data-duel="session">
+          <div class="duel-label" data-i18n="session_label">Session</div>
+          <div class="duel-line">
+            <div class="duel-pct left" id="claude-session-percent">--</div>
+            <div class="duel-track">
+              <div class="duel-fill left" id="claude-session-fill"></div>
+              <div class="duel-center"></div>
+              <div class="duel-fill right" id="codex-session-fill"></div>
+            </div>
+            <div class="duel-pct right" id="codex-session-percent">--</div>
+          </div>
+          <div class="reset-line">
+            <div id="claude-session-reset">--</div>
+            <div id="codex-session-reset">--</div>
+          </div>
+        </div>
+
+        <div class="duel" data-duel="weekly">
+          <div class="duel-label" data-i18n="weekly_label">Weekly</div>
+          <div class="duel-line">
+            <div class="duel-pct left" id="claude-weekly-percent">--</div>
+            <div class="duel-track">
+              <div class="duel-fill left" id="claude-weekly-fill"></div>
+              <div class="duel-center"></div>
+              <div class="duel-fill right" id="codex-weekly-fill"></div>
+            </div>
+            <div class="duel-pct right" id="codex-weekly-percent">--</div>
+          </div>
+          <div class="reset-line">
+            <div id="claude-weekly-reset">--</div>
+            <div id="codex-weekly-reset">--</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="standings">
+        <div class="section-head">
+          <div class="section-title">MATCH STATS</div>
+          <button class="range-chip" data-action="toggle-project-range">Today</button>
+        </div>
+        <div data-project-list></div>
+      </section>
+
+      <div style="flex:1"></div>
+
+      <section class="footer">
+        <div class="meta">
+          <span data-footer="rate">Rate: --</span>
+          <span>|</span>
+          <span data-footer="status">Status: Loading</span>
+        </div>
+        <div class="actions">
+          <button class="action primary" data-action="refresh" data-i18n="refresh_now">Refresh</button>
+          <button class="action" data-action="install" data-i18n="install_hook">Install Hook</button>
+          <button class="action" data-action="quit" data-i18n="quit">Quit</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="application/json" id="i18n-data">{{I18N_BUNDLE}}</script>
+  <script>
+    function loadI18nBundle() {
+      const fallback = {
+        "zh-TW": {
+          claude_name: "Claude Code",
+          codex_name: "Codex",
+          project_range_1d: "今日",
+          project_range_7d: "7 日",
+          project_range_30d: "月",
+          session_label: "Session",
+          weekly_label: "本週",
+          projects_empty: "無記錄",
+          refresh_now: "↻ 立即更新",
+          install_hook: "安裝 Hook",
+          quit: "⏻ 結束",
+          reset_placeholder: "重置 --",
+          rate_text: "速率：{value}",
+          status_text: "狀態：{value}",
+        },
+        en: {
+          claude_name: "Claude Code",
+          codex_name: "Codex",
+          project_range_1d: "Today",
+          project_range_7d: "7 Days",
+          project_range_30d: "Month",
+          session_label: "Session",
+          weekly_label: "Weekly",
+          projects_empty: "No records",
+          refresh_now: "↻ Refresh",
+          install_hook: "Install Hook",
+          quit: "⏻ Quit",
+          reset_placeholder: "Resets in --",
+          rate_text: "Rate: {value}",
+          status_text: "Status: {value}",
+        },
+      };
+      const node = document.getElementById("i18n-data");
+      const raw = node ? node.textContent.trim() : "";
+      if (!raw || raw.startsWith("{{")) return fallback;
+      try {
+        return JSON.parse(raw);
+      } catch (_error) {
+        return fallback;
+      }
+    }
+
+    const I18N = loadI18nBundle();
+    const FALLBACK_LANGUAGE = "en";
+    const root = document.documentElement;
+    let currentLanguage = "zh-TW";
+    let projectRange = "1d";
+    let latestState = null;
+    let goalShownAt = 0;
+
+    function languageTable(language) {
+      return I18N[language] || I18N[FALLBACK_LANGUAGE] || {};
+    }
+
+    function t(key, params = {}) {
+      const template = languageTable(currentLanguage)[key] || languageTable(FALLBACK_LANGUAGE)[key] || key;
+      return template.replace(/\{(\w+)\}/g, (_, name) => `${params[name] ?? ""}`);
+    }
+
+    function cssVar(name) {
+      return getComputedStyle(root).getPropertyValue(name).trim();
+    }
+
+    function clampPercent(value) {
+      return Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
+    }
+
+    function colorFor(percent, fallback) {
+      if (typeof percent !== "number") return fallback;
+      if (percent >= 80) return cssVar("--danger");
+      if (percent >= 50) return cssVar("--warn");
+      return fallback;
+    }
+
+    function cleanScore(text) {
+      if (!text || text === "--") return "--";
+      return `${text}`.split("%")[0];
+    }
+
+    function projectRangeLabel(range) {
+      if (range === "7d") return t("project_range_7d");
+      if (range === "30d") return t("project_range_30d");
+      return t("project_range_1d");
+    }
+
+    function applyStaticText() {
+      document.documentElement.lang = currentLanguage === "zh-TW" ? "zh-Hant" : currentLanguage;
+      document.querySelectorAll("[data-i18n]").forEach((node) => {
+        const key = node.dataset.i18n;
+        if (key) node.textContent = t(key);
+      });
+      const rangeButton = document.querySelector('[data-action="toggle-project-range"]');
+      if (rangeButton) rangeButton.textContent = projectRangeLabel(projectRange);
+    }
+
+    window.usageSetLanguage = function usageSetLanguage(language) {
+      currentLanguage = I18N[language] ? language : FALLBACK_LANGUAGE;
+      applyStaticText();
+      if (latestState) {
+        window.usageApplyState({ ...latestState, language: currentLanguage });
+      }
+    };
+
+    function updateScoreboard(claudeText, codexText, claudeActive, codexActive) {
+      const claudeScore = document.getElementById("score-claude");
+      const codexScore = document.getElementById("score-codex");
+      if (claudeScore) claudeScore.textContent = claudeActive ? cleanScore(claudeText) : "--";
+      if (codexScore) codexScore.textContent = codexActive ? cleanScore(codexText) : "--";
+    }
+
+    function updateDuel(
+      key,
+      claudePct,
+      claudeText,
+      claudeReset,
+      claudeWarning,
+      claudeAvailable,
+      codexPct,
+      codexText,
+      codexReset,
+      codexWarning,
+      codexAvailable
+    ) {
+      const safeClaude = clampPercent(claudePct);
+      const safeCodex = clampPercent(codexPct);
+      const claudeFill = document.getElementById(`claude-${key}-fill`);
+      const codexFill = document.getElementById(`codex-${key}-fill`);
+      const claudePercent = document.getElementById(`claude-${key}-percent`);
+      const codexPercent = document.getElementById(`codex-${key}-percent`);
+      const claudeResetNode = document.getElementById(`claude-${key}-reset`);
+      const codexResetNode = document.getElementById(`codex-${key}-reset`);
+      if (!claudeFill || !codexFill || !claudePercent || !codexPercent || !claudeResetNode || !codexResetNode) return;
+
+      const claudeActive = claudeAvailable === true && typeof claudePct === "number";
+      const codexActive = codexAvailable === true && typeof codexPct === "number";
+      const claudeColor = colorFor(safeClaude, cssVar("--claude"));
+      const codexColor = colorFor(safeCodex, cssVar("--codex"));
+      claudeFill.style.width = `${claudeActive ? (safeClaude / 100) * 50 : 0}%`;
+      codexFill.style.width = `${codexActive ? (safeCodex / 100) * 50 : 0}%`;
+      claudeFill.style.background = claudeColor;
+      codexFill.style.background = codexColor;
+      claudePercent.textContent = claudeActive ? (claudeText || "--") : "--";
+      codexPercent.textContent = codexActive ? (codexText || "--") : "--";
+      claudePercent.style.color = claudeActive ? claudeColor : "";
+      codexPercent.style.color = codexActive ? codexColor : "";
+      claudeResetNode.textContent = claudeReset || t("reset_placeholder");
+      codexResetNode.textContent = codexReset || t("reset_placeholder");
+      claudeResetNode.dataset.warning = claudeWarning === true ? "true" : "false";
+      codexResetNode.dataset.warning = codexWarning === true ? "true" : "false";
+    }
+
+    function checkGoal(claudePct, codexPct) {
+      const now = Date.now();
+      if (Math.max(clampPercent(claudePct), clampPercent(codexPct)) < 85 || now - goalShownAt <= 30000) return;
+      const overlay = document.querySelector("[data-goal-overlay]");
+      if (!overlay) return;
+      goalShownAt = now;
+      overlay.style.display = "grid";
+      window.requestAnimationFrame(() => {
+        overlay.dataset.visible = "true";
+      });
+      window.setTimeout(() => {
+        overlay.dataset.visible = "false";
+        window.setTimeout(() => {
+          overlay.style.display = "none";
+        }, 400);
+      }, 1800);
+    }
+
+    function parseTokenText(text) {
+      if (!text) return 0;
+      const s = text.replace(/,/g, "").trim();
+      const m = s.match(/^([\d.]+)([KMB])?$/i);
+      if (!m) return 0;
+      const mult = { k: 1e3, m: 1e6, b: 1e9 }[(m[2] || "").toLowerCase()] || 1;
+      return parseFloat(m[1]) * mult;
+    }
+
+    function projectMetric(project) {
+      if (typeof project.tokens === "number") return Math.max(0, project.tokens);
+      return parseTokenText(project.tokensText);
+    }
+
+    function projectMarkup(project, index, maxMetric) {
+      const row = document.createElement("div");
+      const rank = document.createElement("span");
+      const name = document.createElement("span");
+      const meter = document.createElement("span");
+      const meterFill = document.createElement("span");
+      const tokens = document.createElement("span");
+      const metric = projectMetric(project);
+      row.className = "project-row";
+      rank.className = "rank";
+      name.className = "project-name";
+      meter.className = "project-meter";
+      tokens.className = "project-tokens";
+      rank.textContent = `${index + 1}`;
+      name.textContent = project.name || "";
+      tokens.textContent = project.tokensText || project.costText || "";
+      meterFill.style.width = `${maxMetric > 0 ? Math.min(100, (metric / maxMetric) * 100) : 0}%`;
+      meter.append(meterFill);
+      row.append(rank, name, meter, tokens);
+      return row;
+    }
+
+    function renderProjects(projects) {
+      const list = document.querySelector("[data-project-list]");
+      if (!list) return;
+      list.replaceChildren();
+      const items = (projects || []).slice(0, 3);
+      if (items.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "empty-state";
+        empty.textContent = t("projects_empty");
+        list.append(empty);
+        return;
+      }
+      const maxMetric = Math.max(...items.map(projectMetric));
+      items.forEach((project, index) => {
+        list.append(projectMarkup(project, index, maxMetric));
+      });
+    }
+
+    function applyFooter(footer) {
+      const rate = document.querySelector('[data-footer="rate"]');
+      const status = document.querySelector('[data-footer="status"]');
+      const install = document.querySelector('[data-action="install"]');
+      if (rate) rate.textContent = footer.rate || t("rate_text", { value: "--" });
+      if (status) status.textContent = footer.status || t("status_text", { value: "--" });
+      if (install) install.dataset.visible = footer.showInstall === true ? "true" : "false";
+    }
+
+    window.usageApplyState = function usageApplyState(state) {
+      currentLanguage = I18N[state.language] ? state.language : currentLanguage;
+      applyStaticText();
+
+      const claudeSession = state.claude?.session ?? {};
+      const claudeWeekly = state.claude?.weekly ?? {};
+      const codexSession = state.codex?.session ?? {};
+      const codexWeekly = state.codex?.weekly ?? {};
+      const claudeSessionActive = claudeSession.available === true && typeof claudeSession.percent === "number";
+      const codexSessionActive = codexSession.available === true && typeof codexSession.percent === "number";
+
+      updateScoreboard(
+        claudeSession.percentText ?? "--",
+        codexSession.percentText ?? "--",
+        claudeSessionActive,
+        codexSessionActive
+      );
+      updateDuel(
+        "session",
+        claudeSession.percent ?? 0, claudeSession.percentText ?? "--",
+        claudeSession.resetText ?? t("reset_placeholder"), claudeSession.warning,
+        claudeSession.available,
+        codexSession.percent ?? 0, codexSession.percentText ?? "--",
+        codexSession.resetText ?? t("reset_placeholder"), codexSession.warning,
+        codexSession.available
+      );
+      updateDuel(
+        "weekly",
+        claudeWeekly.percent ?? 0, claudeWeekly.percentText ?? "--",
+        claudeWeekly.resetText ?? t("reset_placeholder"), claudeWeekly.warning,
+        claudeWeekly.available,
+        codexWeekly.percent ?? 0, codexWeekly.percentText ?? "--",
+        codexWeekly.resetText ?? t("reset_placeholder"), codexWeekly.warning,
+        codexWeekly.available
+      );
+
+      checkGoal(claudeSession.percent ?? 0, codexSession.percent ?? 0);
+      latestState = state;
+      renderProjects(
+        projectRange === "7d" ? state.projects7d
+        : projectRange === "30d" ? state.projects30d
+        : state.projects
+      );
+      applyFooter(state.footer || {});
+    };
+
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-action]");
+      if (!button) return;
+      if (button.dataset.action === "toggle-project-range") {
+        projectRange = projectRange === "1d" ? "7d" : projectRange === "7d" ? "30d" : "1d";
+        button.textContent = projectRangeLabel(projectRange);
+        if (latestState) {
+          renderProjects(
+            projectRange === "7d" ? latestState.projects7d
+            : projectRange === "30d" ? latestState.projects30d
+            : latestState.projects
+          );
+        }
+        return;
+      }
+      const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.usage;
+      if (bridge && typeof bridge.postMessage === "function") {
+        bridge.postMessage(button.dataset.action);
+      }
+    });
+
+    const pitchCanvas = document.querySelector(".pitch-canvas");
+    const ballCanvas = document.querySelector(".ball-canvas");
+    const pitchCtx = pitchCanvas.getContext("2d");
+    const ballCtx = ballCanvas.getContext("2d");
+    let width = 0;
+    let height = 0;
+    let pixelRatio = 1;
+    const ball = {
+      x: 0,
+      y: 0,
+      r: 14,
+      vx: 0.55,
+      vy: 0.42,
+      angle: 0,
+    };
+
+    const BALL_TOP_RATIO = 0.55;
+    const PLAYER_TOP_RATIO = 0.58;
+    const players = [];
+    let kickCooldown = 0;
+    let stuckFrames = 0;
+    let lastBallX = 0;
+    let lastBallY = 0;
+
+    function playerBounds(team) {
+      return {
+        minX: team === "claude" ? 0 : width * 0.45,
+        maxX: team === "claude" ? width * 0.55 : width,
+        minY: height * PLAYER_TOP_RATIO,
+        maxY: height - 72,
+      };
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function initPlayers() {
+      players.length = 0;
+      const zt = height * PLAYER_TOP_RATIO;
+      const zb = height - 72;
+      const zh = Math.max(10, zb - zt);
+      const specs = [
+        { team: "claude", hx: 0.05, hy: 0.50 },
+        { team: "claude", hx: 0.20, hy: 0.25 },
+        { team: "claude", hx: 0.20, hy: 0.75 },
+        { team: "claude", hx: 0.35, hy: 0.35 },
+        { team: "claude", hx: 0.35, hy: 0.65 },
+        { team: "claude", hx: 0.50, hy: 0.50 },
+        { team: "codex", hx: 0.95, hy: 0.50 },
+        { team: "codex", hx: 0.80, hy: 0.25 },
+        { team: "codex", hx: 0.80, hy: 0.75 },
+        { team: "codex", hx: 0.65, hy: 0.35 },
+        { team: "codex", hx: 0.65, hy: 0.65 },
+        { team: "codex",  hx: 0.50, hy: 0.50 },
+      ];
+      specs.forEach((s) => {
+        const hx = s.hx * width;
+        const hy = zt + s.hy * zh;
+        const bounds = playerBounds(s.team);
+        players.push({
+          team: s.team,
+          x: clamp(hx + (Math.random() - 0.5) * 16, bounds.minX + 6, bounds.maxX - 6),
+          y: clamp(hy + (Math.random() - 0.5) * 16, bounds.minY + 6, bounds.maxY - 6),
+          hx: clamp(hx, bounds.minX + 6, bounds.maxX - 6),
+          hy: clamp(hy, bounds.minY + 6, bounds.maxY - 6),
+          tx: clamp(hx, bounds.minX + 6, bounds.maxX - 6),
+          ty: clamp(hy, bounds.minY + 6, bounds.maxY - 6),
+          speed: 0.2 + Math.random() * 0.2,
+          timer: Math.random() * 90,
+        });
+      });
+    }
+
+    function closestPlayer(team) {
+      let closest = null;
+      let closestDistance = Infinity;
+      players.forEach((player) => {
+        if (player.team !== team) return;
+        const distance = Math.hypot(ball.x - player.x, ball.y - player.y);
+        if (distance < closestDistance) {
+          closest = player;
+          closestDistance = distance;
+        }
+      });
+      return closest;
+    }
+
+    function setRoamTarget(player) {
+      const bounds = playerBounds(player.team);
+      const spreadX = player.team === "claude" || player.team === "codex" ? 30 : 24;
+      player.tx = clamp(player.hx + (Math.random() - 0.5) * spreadX * 2, bounds.minX + 6, bounds.maxX - 6);
+      player.ty = clamp(player.hy + (Math.random() - 0.5) * 32, bounds.minY + 6, bounds.maxY - 6);
+      player.timer = 80 + Math.random() * 140;
+      player.speed = 0.2 + Math.random() * 0.2;
+    }
+
+    function movePlayerToward(player, tx, ty, speed) {
+      const bounds = playerBounds(player.team);
+      const dx = tx - player.x;
+      const dy = ty - player.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance > 0.1) {
+        const step = Math.min(speed, distance);
+        player.x += (dx / distance) * step;
+        player.y += (dy / distance) * step;
+      }
+      player.x = clamp(player.x, bounds.minX + 4, bounds.maxX - 4);
+      player.y = clamp(player.y, bounds.minY + 4, bounds.maxY - 4);
+    }
+
+    function kickBall(player) {
+      if (kickCooldown > 0 || Math.abs(player.x - ball.x) >= 10 || Math.abs(player.y - ball.y) >= 10) return;
+      const direction = player.team === "claude" ? 1 : -1;
+      ball.vx = direction * (1.2 + Math.random() * 0.8);
+      ball.vy = (Math.random() < 0.5 ? -1 : 1) * (0.8 + Math.random() * 0.5);
+      kickCooldown = 60;
+    }
+
+    function drawStickPlayer(player) {
+      const color = player.team === "claude" ? "#f4a261" : "#4fc3f7";
+      ballCtx.save();
+      ballCtx.globalAlpha = 0.85;
+      ballCtx.strokeStyle = color;
+      ballCtx.fillStyle = color;
+      ballCtx.lineWidth = 1.2;
+      ballCtx.lineCap = "round";
+      ballCtx.lineJoin = "round";
+      ballCtx.beginPath();
+      ballCtx.arc(player.x, player.y - 8, 3, 0, Math.PI * 2);
+      ballCtx.fill();
+      ballCtx.beginPath();
+      ballCtx.moveTo(player.x, player.y - 5);
+      ballCtx.lineTo(player.x, player.y + 1);
+      ballCtx.moveTo(player.x - 3, player.y - 2);
+      ballCtx.lineTo(player.x + 3, player.y - 2);
+      ballCtx.moveTo(player.x, player.y + 1);
+      ballCtx.lineTo(player.x - 3, player.y + 5);
+      ballCtx.moveTo(player.x, player.y + 1);
+      ballCtx.lineTo(player.x + 3, player.y + 5);
+      ballCtx.stroke();
+      ballCtx.restore();
+    }
+
+    function updateAndDrawPlayers() {
+      if (players.length !== 12) initPlayers();
+      const claudeChaser = closestPlayer("claude");
+      const codexChaser = closestPlayer("codex");
+      if (kickCooldown > 0) kickCooldown -= 1;
+
+      players.forEach((p) => {
+        if (p === claudeChaser || p === codexChaser) {
+          movePlayerToward(p, ball.x, ball.y, 0.8);
+          kickBall(p);
+        } else {
+          movePlayerToward(p, p.tx, p.ty, p.speed);
+          p.timer -= 1;
+          if (Math.hypot(p.tx - p.x, p.ty - p.y) < 1 || p.timer <= 0) {
+            setRoamTarget(p);
+          }
+        }
+        drawStickPlayer(p);
+      });
+    }
+
+    function sizeCanvas(canvas, ctx) {
+      canvas.width = Math.floor(width * pixelRatio);
+      canvas.height = Math.floor(height * pixelRatio);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    }
+
+    function cornerArc(x, y, start, end) {
+      pitchCtx.beginPath();
+      pitchCtx.arc(x, y, 16, start, end);
+      pitchCtx.stroke();
+    }
+
+    function drawPitch() {
+      for (let y = 0; y < height; y += 40) {
+        pitchCtx.fillStyle = Math.floor(y / 40) % 2 === 0 ? "#2e7d32" : "#388e3c";
+        pitchCtx.fillRect(0, y, width, 40);
+      }
+
+      pitchCtx.save();
+      pitchCtx.globalAlpha = 0.1;
+      pitchCtx.translate(width / 2, height * 0.45);
+      pitchCtx.scale(1.15, 0.76);
+      const light = pitchCtx.createRadialGradient(0, 0, 0, 0, 0, Math.max(width, height) * 0.5);
+      light.addColorStop(0, "#ffffff");
+      light.addColorStop(1, "rgba(255, 255, 255, 0)");
+      pitchCtx.fillStyle = light;
+      pitchCtx.fillRect(-width, -height, width * 2, height * 2);
+      pitchCtx.restore();
+
+      pitchCtx.save();
+      pitchCtx.globalAlpha = 0.55;
+      pitchCtx.strokeStyle = "#ffffff";
+      pitchCtx.lineWidth = 2;
+      const midY = height * 0.76;
+      const midX = width / 2;
+      pitchCtx.beginPath();
+      pitchCtx.moveTo(0, midY);
+      pitchCtx.lineTo(width, midY);
+      pitchCtx.stroke();
+      pitchCtx.beginPath();
+      pitchCtx.arc(midX, midY, 56, 0, Math.PI * 2);
+      pitchCtx.stroke();
+      pitchCtx.strokeRect(0, midY - 80, 70, 160);
+      pitchCtx.strokeRect(width - 70, midY - 80, 70, 160);
+      cornerArc(0, 0, 0, Math.PI / 2);
+      cornerArc(width, 0, Math.PI / 2, Math.PI);
+      cornerArc(width, height, Math.PI, Math.PI * 1.5);
+      cornerArc(0, height, Math.PI * 1.5, Math.PI * 2);
+      pitchCtx.restore();
+    }
+
+    function drawPentagon(ctx, cx, cy, r, startAngle) {
+      ctx.beginPath();
+      for (let i = 0; i < 5; i += 1) {
+        const a = startAngle + i * (Math.PI * 2 / 5);
+        const x = cx + Math.cos(a) * r;
+        const y = cy + Math.sin(a) * r;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+    }
+
+    function drawBall() {
+      const r = ball.r;
+      ballCtx.save();
+      ballCtx.globalAlpha = 0.5;
+      ballCtx.translate(ball.x, ball.y);
+      ballCtx.rotate(ball.angle);
+      ballCtx.beginPath();
+      ballCtx.arc(0, 0, r, 0, Math.PI * 2);
+      ballCtx.fillStyle = "#f0f0f0";
+      ballCtx.fill();
+      ballCtx.strokeStyle = "rgba(0,0,0,0.55)";
+      ballCtx.lineWidth = 0.8;
+      ballCtx.stroke();
+      ballCtx.beginPath();
+      ballCtx.arc(0, 0, r - 0.5, 0, Math.PI * 2);
+      ballCtx.clip();
+      ballCtx.fillStyle = "#111";
+      drawPentagon(ballCtx, 0, 0, r * 0.40, -Math.PI / 2);
+      ballCtx.fill();
+      for (let i = 0; i < 5; i += 1) {
+        const a = -Math.PI / 2 + i * (Math.PI * 2 / 5);
+        const dist = r * 0.78;
+        drawPentagon(ballCtx, Math.cos(a) * dist, Math.sin(a) * dist, r * 0.32, a - Math.PI / 2);
+        ballCtx.fill();
+      }
+      ballCtx.restore();
+    }
+
+    function resetBall() {
+      ball.x = width / 2 + (Math.random() - 0.5) * 60;
+      ball.y = height * 0.76 + (Math.random() - 0.5) * 36;
+      ball.vx = (Math.random() < 0.5 ? -1 : 1) * 0.55;
+      ball.vy = (Math.random() < 0.5 ? -1 : 1) * 0.42;
+      stuckFrames = 0;
+      lastBallX = ball.x;
+      lastBallY = ball.y;
+    }
+
+    function updateBall() {
+      const top = height * BALL_TOP_RATIO;
+      ball.x += ball.vx;
+      ball.y += ball.vy;
+      if (ball.x <= ball.r) {
+        ball.x = ball.r;
+        ball.vx = Math.abs(ball.vx);
+      }
+      if (ball.x >= width - ball.r) {
+        ball.x = width - ball.r;
+        ball.vx = -Math.abs(ball.vx);
+      }
+      if (ball.y <= top + ball.r) {
+        ball.y = top + ball.r;
+        ball.vy = Math.abs(ball.vy);
+      }
+      if (ball.y >= height - ball.r) {
+        ball.y = height - ball.r;
+        ball.vy = -Math.abs(ball.vy);
+      }
+      if (Math.hypot(ball.x - lastBallX, ball.y - lastBallY) < 0.05) {
+        stuckFrames += 1;
+      } else {
+        stuckFrames = 0;
+      }
+      lastBallX = ball.x;
+      lastBallY = ball.y;
+      if (stuckFrames > 200) resetBall();
+      ball.angle += Math.hypot(ball.vx, ball.vy) * 0.04;
+    }
+
+    function resizeCanvases() {
+      pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+      width = window.innerWidth;
+      height = window.innerHeight;
+      if (width < 10 || height < 10) {
+        console.error("STOP: 2 - Canvas has invalid dimensions", width, height);
+        return;
+      }
+      sizeCanvas(pitchCanvas, pitchCtx);
+      sizeCanvas(ballCanvas, ballCtx);
+      drawPitch();
+      if (players.length !== 12) initPlayers();
+      if (ball.x === 0 && ball.y === 0) {
+        resetBall();
+      } else {
+        ball.x = Math.max(ball.r, Math.min(width - ball.r, ball.x));
+        ball.y = Math.max(height * BALL_TOP_RATIO + ball.r, Math.min(height - ball.r, ball.y));
+      }
+    }
+
+    function animateBall() {
+      if (width >= 10 && height >= 10) {
+        ballCtx.clearRect(0, 0, width, height);
+        updateAndDrawPlayers();
+        updateBall();
+        drawBall();
+      }
+      window.requestAnimationFrame(animateBall);
+    }
+
+    window.addEventListener("resize", resizeCanvases);
+    applyStaticText();
+    resizeCanvases();
+    window.requestAnimationFrame(animateBall);
+
+    window.usageApplyState({
+      language: "zh-TW",
+      claude: {
+        session: { percent: 23, percentText: "23%", resetText: "重置 3小時 28分鐘後", warning: false, available: true },
+        weekly: { percent: 12, percentText: "12%", resetText: "重置 6天 5小時後", warning: false, available: true },
+      },
+      codex: {
+        session: { percent: 28, percentText: "28%", resetText: "重置 3小時 45分鐘後", warning: false, available: true },
+        weekly: { percent: 50, percentText: "50%", resetText: "重置 4天 7小時後", warning: true, available: true },
+      },
+      projects: [
+        { name: "usage", tokens: 99402498, tokensText: "99,402,498", costText: "$140.82" },
+        { name: "memory-aware-agent", tokens: 15220600, tokensText: "15,220,600", costText: "$21.45" },
+        { name: "obsidian00", tokens: 6188719, tokensText: "6,188,719", costText: "$8.74" },
+      ],
+      projects7d: [
+        { name: "usage", tokens: 488900, tokensText: "488.9K", costText: "$48.89" },
+        { name: "memory-aware-agent", tokens: 92000, tokensText: "92.0K", costText: "$9.20" },
+        { name: "obsidian00", tokens: 48200, tokensText: "48.2K", costText: "$4.82" },
+      ],
+      projects30d: [
+        { name: "usage", tokens: 1900000, tokensText: "1.9M", costText: "$190.00" },
+        { name: "memory-aware-agent", tokens: 780000, tokensText: "780K", costText: "$78.00" },
+        { name: "obsidian00", tokens: 620000, tokensText: "620K", costText: "$62.00" },
+      ],
+      footer: { rate: "速率：高負載", status: "狀態：✓ 已同步", today: "今日：$140.82 (175,369,967 tokens)", showInstall: false },
+    });
+  </script>
+</body>
+</html>

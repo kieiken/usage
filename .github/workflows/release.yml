@@ -1,0 +1,134 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to (re)build, e.g. v0.1.1'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Resolve ref and tag
+        id: ref
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "ref=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ github.ref }}" >> "$GITHUB_OUTPUT"
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          ref: ${{ steps.ref.outputs.ref }}
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: '3.13'
+
+      - name: Install build dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -e . py2app
+
+      - name: Build .app
+        run: python3 setup_app.py py2app
+
+      - name: Verify .app bundle contents
+        run: |
+          set -e
+          if [[ -d dist/main.app && ! -d dist/usage.app ]]; then
+            mv dist/main.app dist/usage.app
+          fi
+
+          dump_resources() {
+            echo "Contents/Resources listing:"
+            ls -lR dist/usage.app/Contents/Resources | head -50 || true
+          }
+
+          verify_file() {
+            if [[ ! -f "$1" ]]; then
+              echo "Missing required bundle file: $1"
+              dump_resources
+              exit 1
+            fi
+          }
+
+          if [[ ! -d dist/usage.app ]]; then
+            echo "Missing app bundle: dist/usage.app"
+            ls -l dist || true
+            exit 1
+          fi
+
+          verify_file dist/usage.app/Contents/Resources/usage_statusline.py
+          verify_file dist/usage.app/Contents/Resources/usage-claude-desktop-deriver.py
+          verify_file dist/usage.app/Contents/Resources/install-desktop-deriver.sh
+          verify_file dist/usage.app/Contents/Resources/claude.webp
+          verify_file dist/usage.app/Contents/Resources/codex.webp
+          verify_file dist/usage.app/Contents/Info.plist
+
+      - name: Zip .app
+        run: |
+          cd dist && ditto -c -k --sequesterRsrc --keepParent usage.app usage.app.zip
+
+      - name: Build double-click installer pkg
+        run: |
+          chmod +x scripts/build_pkg.sh
+          ./scripts/build_pkg.sh
+
+      - name: Prepare installer assets
+        run: |
+          cp scripts/install-github-release.sh dist/install.sh
+          cp scripts/install-desktop-deriver.sh dist/install-desktop-deriver.sh
+          cp scripts/uninstall-desktop-deriver.sh dist/uninstall-desktop-deriver.sh
+          cp scripts/usage-claude-desktop-deriver.py dist/usage-claude-desktop-deriver.py
+
+      - name: Generate SHA256
+        run: |
+          cd dist
+          shasum -a 256 \
+            usage.app.zip \
+            usage-installer.pkg \
+            install.sh \
+            install-desktop-deriver.sh \
+            uninstall-desktop-deriver.sh \
+            usage-claude-desktop-deriver.py \
+            | tee SHA256SUMS
+
+      - name: Ensure release exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "${{ steps.ref.outputs.tag }}" >/dev/null 2>&1; then
+            gh release create \
+              "${{ steps.ref.outputs.tag }}" \
+              --target "${{ github.sha }}" \
+              --title "${{ steps.ref.outputs.tag }}" \
+              --notes ""
+          fi
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ steps.ref.outputs.tag }}" \
+            dist/usage.app.zip \
+            dist/usage-installer.pkg \
+            dist/install.sh \
+            dist/install-desktop-deriver.sh \
+            dist/uninstall-desktop-deriver.sh \
+            dist/usage-claude-desktop-deriver.py \
+            dist/SHA256SUMS \
+            --clobber

@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+.mypy_cache/
+.ruff_cache/
+.claude/settings.local.json
+*.log
+pricing_cache.json
+usage.log
+usage.err.log
+.DS_Store
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.coverage
+.antigravitycli/

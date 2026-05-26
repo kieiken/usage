@@ -1,0 +1,865 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --text: #ffe8cc;
+      --muted: #b07040;
+      --surface: rgba(8, 4, 0, 0.28);
+      --line: rgba(255, 120, 20, 0.3);
+      --warn: #ffcc44;
+      --danger: #ff5533;
+      --bar: linear-gradient(90deg, #ff6600 0%, #ffcc44 52%, #ffffff 100%);
+      --tick: rgba(255, 232, 204, 0.13);
+      --shadow: 0 18px 44px rgba(0, 0, 0, 0.5);
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100vh;
+      margin: 0;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+      color: var(--text);
+      background: #000000;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      overscroll-behavior: none;
+    }
+
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      background:
+        radial-gradient(circle at 50% 32%, rgba(255, 110, 0, 0.11), transparent 28%),
+        linear-gradient(180deg, transparent 0 55%, rgba(70, 24, 0, 0.2) 100%);
+    }
+
+    @keyframes sweep {
+      from { transform: translateX(-120%); }
+      to { transform: translateX(220%); }
+    }
+
+    .space-canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .viewport {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      padding: 10px;
+      overflow: hidden;
+      isolation: isolate;
+    }
+
+    .wrap {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: 100%;
+      height: 100%;
+    }
+
+    .card,
+    .footer {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      box-shadow: var(--shadow), 0 0 24px rgba(255, 100, 0, 0.08) inset;
+      border-radius: 8px;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+    }
+
+    .card::before,
+    .footer::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at top right, rgba(255, 160, 32, 0.12), transparent 34%),
+        linear-gradient(180deg, rgba(255, 120, 20, 0.08), transparent 42%);
+    }
+
+    .card {
+      padding: 12px 14px;
+    }
+
+    .card[data-card="claude"],
+    .card[data-card="codex"] {
+      min-height: 224px;
+    }
+
+    .header {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .header img,
+    .singularity-badge {
+      width: 28px;
+      height: 28px;
+      flex: none;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 140, 40, 0.34);
+      background:
+        radial-gradient(circle, #000 0 42%, rgba(255, 150, 35, 0.5) 48%, rgba(40, 8, 0, 0.8) 72%),
+        rgba(20, 8, 0, 0.8);
+      box-shadow: 0 0 18px rgba(255, 100, 0, 0.2), inset 0 0 12px rgba(255, 180, 60, 0.1);
+    }
+
+    .singularity-badge {
+      display: grid;
+      place-items: center;
+      color: #ffcc44;
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .header-copy {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.2;
+      font-weight: 600;
+      letter-spacing: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .switch,
+    .range-chip,
+    .action {
+      border: 1px solid rgba(255, 120, 20, 0.4);
+      background: rgba(20, 8, 0, 0.8);
+      color: var(--text);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      box-shadow: 0 0 14px rgba(255, 100, 0, 0.14), inset 0 0 10px rgba(255, 160, 32, 0.06);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    .switch,
+    .range-chip {
+      flex: none;
+      min-height: 28px;
+      padding: 0 12px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    .switch:active,
+    .action:active,
+    .range-chip:active {
+      transform: translateY(1px);
+    }
+
+    .row {
+      position: relative;
+      z-index: 1;
+      padding: 10px 0 0;
+    }
+
+    .row + .row {
+      margin-top: 10px;
+      border-top: 1px solid rgba(255, 120, 20, 0.15);
+    }
+
+    .row-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 6px;
+    }
+
+    .row-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0;
+    }
+
+    .percent {
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .track {
+      position: relative;
+      height: 16px;
+      padding: 2px;
+      overflow: hidden;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 120, 20, 0.24);
+      background: rgba(12, 4, 0, 0.84);
+      box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.62);
+    }
+
+    .track::before {
+      content: "";
+      position: absolute;
+      inset: 2px;
+      border-radius: inherit;
+      background:
+        repeating-linear-gradient(
+          90deg,
+          transparent 0 calc(10% - 1px),
+          var(--tick) calc(10% - 1px) 10%
+        );
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .track::after {
+      content: "";
+      position: absolute;
+      inset: 1px auto 1px 0;
+      width: 40%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.68), transparent);
+      animation: sweep 2.5s linear infinite;
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    .fill {
+      position: relative;
+      z-index: 1;
+      width: var(--value, 0%);
+      height: 100%;
+      border-radius: inherit;
+      background: var(--bar);
+      box-shadow: 0 0 18px rgba(255, 100, 0, 0.24);
+      transition: width 160ms ease-out, filter 160ms ease-out;
+    }
+
+    .reset {
+      margin-top: 5px;
+      font-size: 12px;
+      color: var(--muted);
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .reset[data-warning="true"] {
+      color: var(--danger);
+      font-weight: 600;
+    }
+
+    .row[data-available="false"] .percent,
+    .row[data-available="false"] .reset {
+      color: rgba(176, 112, 64, 0.72);
+    }
+
+    .projects-card {
+      flex: 1;
+      padding-bottom: 12px;
+    }
+
+    [data-project-list] {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      gap: 8px;
+    }
+
+    .proj-row {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 120, 20, 0.16);
+      background: rgba(18, 7, 0, 0.66);
+    }
+
+    .proj-topline {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .proj-rank {
+      display: grid;
+      place-items: center;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: rgba(255, 120, 20, 0.16);
+      color: #ffcc44;
+      font-size: 11px;
+      font-weight: 700;
+      flex: none;
+    }
+
+    .proj-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .proj-tokens {
+      align-self: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    .proj-cost {
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .empty-state {
+      padding: 12px 4px 2px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .footer {
+      padding: 12px 14px;
+    }
+
+    .meta {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      gap: 4px;
+      font-size: 12px;
+      line-height: 1.15;
+      color: var(--muted);
+    }
+
+    .today {
+      position: relative;
+      z-index: 1;
+      margin-top: 5px;
+      padding-top: 5px;
+      border-top: 1px solid rgba(255, 120, 20, 0.15);
+      font-size: 13px;
+      line-height: 1.15;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .actions {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .action {
+      flex: 1;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+    }
+
+    .action[data-action="install"] {
+      display: none;
+    }
+
+    .footer .action[data-action="switch"] {
+      display: none;
+    }
+
+    .action[data-action="install"][data-visible="true"] {
+      display: inline-block;
+      flex: 1;
+    }
+  </style>
+</head>
+<body>
+  <canvas class="space-canvas" aria-hidden="true"></canvas>
+
+  <div class="viewport">
+    <main class="wrap">
+      <section class="card" data-card="claude">
+        <header class="header">
+          <img src="{{CLAUDE_ICON}}" alt="">
+          <div class="header-copy">
+            <h1 data-i18n="claude_name">Claude Code</h1>
+          </div>
+          <button class="switch" data-action="switch" data-i18n="switch_panel">Switch Panel</button>
+        </header>
+        <div class="row" data-row="session"></div>
+        <div class="row" data-row="weekly"></div>
+      </section>
+
+      <section class="card" data-card="codex">
+        <header class="header">
+          <img src="{{CODEX_ICON}}" alt="">
+          <div class="header-copy">
+            <h1 data-i18n="codex_name">Codex</h1>
+          </div>
+        </header>
+        <div class="row" data-row="session"></div>
+        <div class="row" data-row="weekly"></div>
+      </section>
+
+      <section class="card projects-card" data-card="projects">
+        <header class="header">
+          <div class="singularity-badge" aria-hidden="true">O</div>
+          <div class="header-copy">
+            <h1 data-i18n="projects_title">Project Usage</h1>
+          </div>
+          <button class="range-chip" data-action="toggle-project-range">Today</button>
+        </header>
+        <div data-project-list></div>
+      </section>
+
+      <section class="footer">
+        <div class="meta">
+          <div data-footer="rate">Rate: --</div>
+          <div data-footer="status">Status: Loading</div>
+        </div>
+        <div class="today" data-footer="today">Today: $0.00 (0 tokens)</div>
+        <div class="actions">
+          <button class="action primary" data-action="refresh" data-i18n="refresh_now">Refresh</button>
+          <button class="action" data-action="switch" data-i18n="switch_panel">Switch</button>
+          <button class="action" data-action="quit" data-i18n="quit">Quit</button>
+          <button class="action" data-action="install" data-i18n="install_hook">Install Hook</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="application/json" id="i18n-data">{{I18N_BUNDLE}}</script>
+  <script>
+    function loadI18nBundle() {
+      const fallback = {
+        en: {
+          claude_name: "Claude Code",
+          codex_name: "Codex",
+          projects_title: "Project Usage",
+          switch_panel: "Switch Panel",
+          refresh_now: "Refresh",
+          install_hook: "Install Hook",
+          quit: "Quit",
+          project_range_1d: "Today",
+          project_range_7d: "7 Days",
+          project_range_30d: "Month",
+          session_label: "Session",
+          weekly_label: "Weekly",
+          projects_empty: "No records",
+          reset_placeholder: "Resets in --",
+          rate_text: "Rate: {value}",
+          status_text: "Status: {value}",
+          today_text: "Today: ${cost} ({tokens} tokens)",
+        },
+      };
+      const node = document.getElementById("i18n-data");
+      const raw = node ? node.textContent.trim() : "";
+      if (!raw || raw.startsWith("{{")) return fallback;
+      try {
+        return JSON.parse(raw);
+      } catch (_error) {
+        return fallback;
+      }
+    }
+
+    const I18N = loadI18nBundle();
+    const FALLBACK_LANGUAGE = "en";
+    const root = document.documentElement;
+    let currentLanguage = "en";
+    let projectRange = "1d";
+    let latestState = null;
+
+    function languageTable(language) {
+      return I18N[language] || I18N[FALLBACK_LANGUAGE] || {};
+    }
+
+    function t(key, params = {}) {
+      const template = languageTable(currentLanguage)[key] || languageTable(FALLBACK_LANGUAGE)[key] || key;
+      return template.replace(/\{(\w+)\}/g, (_, name) => `${params[name] ?? ""}`);
+    }
+
+    function labels() {
+      return {
+        session: t("session_label"),
+        weekly: t("weekly_label"),
+      };
+    }
+
+    function projectRangeLabel(range) {
+      if (range === "7d") return t("project_range_7d");
+      if (range === "30d") return t("project_range_30d");
+      return t("project_range_1d");
+    }
+
+    function applyStaticText() {
+      document.documentElement.lang = currentLanguage === "zh-TW" ? "zh-Hant" : currentLanguage;
+      document.querySelectorAll("[data-i18n]").forEach((node) => {
+        const key = node.dataset.i18n;
+        if (key) node.textContent = t(key);
+      });
+      const rangeButton = document.querySelector('[data-action="toggle-project-range"]');
+      if (rangeButton) rangeButton.textContent = projectRangeLabel(projectRange);
+    }
+
+    window.usageSetLanguage = function usageSetLanguage(language) {
+      currentLanguage = I18N[language] ? language : FALLBACK_LANGUAGE;
+      applyStaticText();
+      if (latestState) {
+        window.usageApplyState({ ...latestState, language: currentLanguage });
+      }
+    };
+
+    function cssVar(name) {
+      return getComputedStyle(root).getPropertyValue(name).trim();
+    }
+
+    function colorFor(percent) {
+      if (typeof percent !== "number") return "";
+      if (percent >= 80) return cssVar("--danger");
+      if (percent >= 50) return cssVar("--warn");
+      return "";
+    }
+
+    function renderRow(card, key, row) {
+      const el = document.querySelector(`[data-card="${card}"] [data-row="${key}"]`);
+      if (!el) return;
+      const data = row || {
+        percent: null,
+        percentText: "--",
+        resetText: t("reset_placeholder"),
+        warning: false,
+        available: false,
+      };
+      const available = data.available === true && typeof data.percent === "number";
+      const alertColor = colorFor(data.percent);
+      el.dataset.available = available ? "true" : "false";
+      el.innerHTML = `
+        <div class="row-head">
+          <div class="row-title"></div>
+          <div class="percent"></div>
+        </div>
+        <div class="track"><div class="fill"></div></div>
+        <div class="reset"></div>
+      `;
+      const title = el.querySelector(".row-title");
+      const percent = el.querySelector(".percent");
+      const reset = el.querySelector(".reset");
+      const fill = el.querySelector(".fill");
+      if (!title || !percent || !reset || !fill) return;
+      title.textContent = labels()[key];
+      percent.textContent = data.percentText || "--";
+      reset.textContent = data.resetText || t("reset_placeholder");
+      reset.dataset.warning = data.warning === true ? "true" : "false";
+      percent.style.color = available && alertColor ? alertColor : "";
+      fill.style.setProperty("--value", available ? `${Math.max(0, Math.min(100, data.percent))}%` : "0%");
+      fill.style.filter = available && alertColor ? "brightness(1.14)" : "";
+    }
+
+    function applyCard(name, rows) {
+      renderRow(name, "session", rows && rows.session);
+      renderRow(name, "weekly", rows && rows.weekly);
+    }
+
+    function projectMarkup(project, index) {
+      const row = document.createElement("div");
+      const topline = document.createElement("div");
+      const rank = document.createElement("span");
+      const name = document.createElement("span");
+      const tokens = document.createElement("span");
+      const cost = document.createElement("span");
+      row.className = "proj-row";
+      topline.className = "proj-topline";
+      rank.className = "proj-rank";
+      name.className = "proj-name";
+      tokens.className = "proj-tokens";
+      cost.className = "proj-cost";
+      rank.textContent = `${index + 1}`;
+      name.textContent = project.name || "";
+      tokens.textContent = project.tokensText || "";
+      cost.textContent = project.costText || "";
+      topline.append(rank, name);
+      row.append(topline, tokens, cost);
+      return row;
+    }
+
+    function renderProjects(projects) {
+      const list = document.querySelector("[data-project-list]");
+      if (!list) return;
+      list.replaceChildren();
+      const items = (projects || []).slice(0, 3);
+      if (items.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "empty-state";
+        empty.textContent = t("projects_empty");
+        list.append(empty);
+        return;
+      }
+      items.forEach((project, index) => {
+        list.append(projectMarkup(project, index));
+      });
+    }
+
+    function applyFooter(footer) {
+      const rate = document.querySelector('[data-footer="rate"]');
+      const status = document.querySelector('[data-footer="status"]');
+      const today = document.querySelector('[data-footer="today"]');
+      const install = document.querySelector('[data-action="install"]');
+      if (rate) rate.textContent = footer.rate || t("rate_text", { value: "--" });
+      if (status) status.textContent = footer.status || t("status_text", { value: "--" });
+      if (today) today.textContent = footer.today || t("today_text", { cost: "0.00", tokens: "0" });
+      if (install) install.dataset.visible = footer.showInstall === true ? "true" : "false";
+    }
+
+    window.usageApplyState = function usageApplyState(state) {
+      currentLanguage = I18N[state.language] ? state.language : currentLanguage;
+      applyStaticText();
+      applyCard("claude", state.claude);
+      applyCard("codex", state.codex);
+      latestState = state;
+      renderProjects(
+        projectRange === "1d" ? state.projects
+        : projectRange === "7d" ? state.projects7d
+        : state.projects30d
+      );
+      applyFooter(state.footer || {});
+    };
+
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-action]");
+      if (!button) return;
+      if (button.dataset.action === "toggle-project-range") {
+        projectRange = projectRange === "1d" ? "7d" : projectRange === "7d" ? "30d" : "1d";
+        button.textContent = projectRangeLabel(projectRange);
+        if (latestState) {
+          renderProjects(
+            projectRange === "1d" ? latestState.projects
+            : projectRange === "7d" ? latestState.projects7d
+            : latestState.projects30d
+          );
+        }
+        return;
+      }
+      const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.usage;
+      if (bridge && typeof bridge.postMessage === "function") {
+        bridge.postMessage(button.dataset.action);
+      }
+    });
+
+    const canvas = document.querySelector(".space-canvas");
+    const ctx = canvas.getContext("2d");
+    const stars = [];
+    const particles = [];
+    const starCount = 120;
+    const particleCount = 16;
+    const twinkleCount = 8;
+    let width = 0;
+    let height = 0;
+    let pixelRatio = 1;
+
+    function createStars() {
+      stars.length = 0;
+      for (let i = 0; i < starCount; i += 1) {
+        stars.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          r: 0.5 + Math.random(),
+          alpha: 0.3 + Math.random() * 0.7,
+          phase: Math.random() * Math.PI * 2,
+          twinkle: i < twinkleCount,
+        });
+      }
+    }
+
+    function createParticles() {
+      particles.length = 0;
+      for (let i = 0; i < particleCount; i += 1) {
+        particles.push({
+          phase: (i / particleCount) * Math.PI * 2,
+          speed: 0.0015 + Math.random() * 0.0012,
+          size: 1.4 + Math.random() * 1.8,
+        });
+      }
+    }
+
+    function resizeCanvas() {
+      pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = Math.floor(width * pixelRatio);
+      canvas.height = Math.floor(height * pixelRatio);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      createStars();
+      if (particles.length === 0) createParticles();
+    }
+
+    function drawStars(time) {
+      stars.forEach((star) => {
+        const wobble = star.twinkle ? Math.sin(time * 0.004 + star.phase) * 0.18 : 0;
+        const alpha = Math.max(0.18, Math.min(1, star.alpha + wobble));
+        ctx.beginPath();
+        ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+        ctx.fill();
+      });
+    }
+
+    function ellipsePoint(cx, cy, rx, ry, angle, rotation) {
+      const x = Math.cos(angle) * rx;
+      const y = Math.sin(angle) * ry;
+      const cos = Math.cos(rotation);
+      const sin = Math.sin(rotation);
+      return {
+        x: cx + x * cos - y * sin,
+        y: cy + x * sin + y * cos,
+      };
+    }
+
+    function drawDiskHalf(cx, cy, rotation, start, end) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(rotation);
+      const gradient = ctx.createLinearGradient(-104, 0, 104, 0);
+      gradient.addColorStop(0, "#ffffff");
+      gradient.addColorStop(0.24, "#ffd060");
+      gradient.addColorStop(0.46, "#ff8800");
+      gradient.addColorStop(0.72, "#ff4400");
+      gradient.addColorStop(0.88, "#aa2200");
+      gradient.addColorStop(1, "#330000");
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 100, 28, 0, start, end);
+      ctx.ellipse(0, 0, 52, 14, 0, end, start, true);
+      ctx.closePath();
+      ctx.fillStyle = gradient;
+      ctx.shadowColor = "rgba(255, 130, 0, 0.45)";
+      ctx.shadowBlur = 16;
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(255, 220, 120, 0.24)";
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawEventHorizon(cx, cy) {
+      const edge = ctx.createRadialGradient(cx, cy, 28, cx, cy, 58);
+      edge.addColorStop(0, "rgba(0, 0, 0, 0)");
+      edge.addColorStop(0.58, "rgba(80, 40, 180, 0.5)");
+      edge.addColorStop(1, "rgba(80, 40, 180, 0)");
+      ctx.beginPath();
+      ctx.arc(cx, cy, 58, 0, Math.PI * 2);
+      ctx.fillStyle = edge;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, 36, 0, Math.PI * 2);
+      ctx.fillStyle = "#000000";
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, 38, 0, Math.PI * 2);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "rgba(255, 200, 80, 0.7)";
+      ctx.stroke();
+    }
+
+    function drawParticleStream(cx, cy, rotation, time) {
+      particles.forEach((particle) => {
+        const base = particle.phase + time * particle.speed;
+        for (let i = 3; i >= 0; i -= 1) {
+          const point = ellipsePoint(cx, cy, 100, 28, base - i * 0.09, rotation);
+          const alpha = (4 - i) * 0.14;
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, particle.size * (1 - i * 0.12), 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(255, ${150 + i * 18}, 40, ${alpha})`;
+          ctx.fill();
+        }
+      });
+    }
+
+    function drawBlackHole(time) {
+      const cx = width / 2;
+      const cy = height * 0.32;
+      const rotation = time * 0.00024;
+      const halo = ctx.createRadialGradient(cx, cy, 12, cx, cy, 120);
+      halo.addColorStop(0, "rgba(255, 140, 0, 0.25)");
+      halo.addColorStop(0.42, "rgba(255, 95, 0, 0.12)");
+      halo.addColorStop(1, "rgba(255, 140, 0, 0)");
+      ctx.beginPath();
+      ctx.arc(cx, cy, 120, 0, Math.PI * 2);
+      ctx.fillStyle = halo;
+      ctx.fill();
+
+      drawDiskHalf(cx, cy, rotation, 0, Math.PI);
+      drawEventHorizon(cx, cy);
+      drawDiskHalf(cx, cy, rotation, Math.PI, Math.PI * 2);
+      drawParticleStream(cx, cy, rotation, time);
+    }
+
+    function animate(time) {
+      ctx.clearRect(0, 0, width, height);
+      drawStars(time);
+      drawBlackHole(time);
+      window.requestAnimationFrame(animate);
+    }
+
+    window.addEventListener("resize", resizeCanvas);
+    resizeCanvas();
+    window.requestAnimationFrame(animate);
+
+    window.usageApplyState({
+      language: "en",
+      claude: { session: {}, weekly: {} },
+      codex: { session: {}, weekly: {} },
+      projects: [],
+      projects7d: [],
+      projects30d: [],
+      footer: { rate: "Rate: --", status: "Status: Loading", today: "Today: $0.00 (0 tokens)", showInstall: false }
+    });
+  </script>
+</body>
+</html>

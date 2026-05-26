@@ -1,0 +1,886 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --text: #e0f4ff;
+      --muted: #7ab8d4;
+      --surface: rgba(0, 40, 80, 0.22);
+      --surface-strong: rgba(4, 34, 68, 0.28);
+      --surface-line: rgba(0, 200, 255, 0.2);
+      --cyan: #45e9ff;
+      --claude: linear-gradient(90deg, #f8bc8b 0%, #f4a261 54%, #df8b49 100%);
+      --codex: linear-gradient(90deg, #96f7ff 0%, #3fd9ff 50%, #1b88d2 100%);
+      --projects: linear-gradient(90deg, #b9fff4 0%, #50e6c7 48%, #24a9ff 100%);
+      --warn: #ffd36a;
+      --danger: #ff746d;
+      --tick: rgba(224, 244, 255, 0.17);
+      --shadow: 0 18px 42px rgba(0, 10, 30, 0.38);
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100vh;
+      margin: 0;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+      color: var(--text);
+      background: linear-gradient(180deg, #020d1a 0%, #041428 48%, #071e36 100%);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      overscroll-behavior: none;
+    }
+
+    body::before,
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    body::before {
+      background:
+        radial-gradient(ellipse at 22% 8%, rgba(0, 220, 255, 0.14), transparent 38%),
+        radial-gradient(ellipse at 78% 18%, rgba(48, 116, 255, 0.12), transparent 36%),
+        linear-gradient(180deg, rgba(99, 224, 255, 0.08), transparent 42%);
+    }
+
+    body::after {
+      background:
+        linear-gradient(180deg, transparent 0 72%, rgba(0, 240, 255, 0.08) 100%),
+        repeating-linear-gradient(165deg, rgba(122, 184, 212, 0.06) 0 1px, transparent 1px 64px);
+      opacity: 0.7;
+    }
+
+    @keyframes glimmer {
+      0%, 100% { opacity: 0.18; transform: scale(0.82); }
+      45% { opacity: 0.92; transform: scale(1.2); }
+      70% { opacity: 0.32; transform: scale(0.95); }
+    }
+
+    @keyframes sweep {
+      from { transform: translateX(-120%); }
+      to { transform: translateX(220%); }
+    }
+
+    .bubble-canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .viewport {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      padding: 10px;
+      overflow: hidden;
+      isolation: isolate;
+      z-index: 1;
+    }
+
+    .sparkles,
+    .jellies {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .spark {
+      position: absolute;
+      width: var(--size);
+      height: var(--size);
+      left: var(--x);
+      top: var(--y);
+      border-radius: 50%;
+      background: rgba(102, 246, 255, 0.9);
+      box-shadow: 0 0 10px rgba(102, 246, 255, 0.85);
+      opacity: 0.35;
+      animation: glimmer var(--duration) ease-in-out infinite;
+      animation-delay: var(--delay);
+    }
+
+    .jelly {
+      position: absolute;
+      width: var(--w);
+      height: var(--h);
+      left: var(--x);
+      top: var(--y);
+      border-radius: 52% 52% 46% 46%;
+      background:
+        radial-gradient(ellipse at 48% 24%, rgba(255, 255, 255, 0.48), transparent 24%),
+        linear-gradient(180deg, rgba(124, 244, 255, 0.5), rgba(26, 186, 225, 0.16));
+      border: 1px solid rgba(136, 248, 255, 0.28);
+      box-shadow: 0 0 20px cyan;
+      opacity: 0.78;
+      transform: translate3d(0, 0, 0);
+      will-change: transform;
+    }
+
+    .jelly::before,
+    .jelly::after {
+      content: "";
+      position: absolute;
+      left: 18%;
+      right: 18%;
+      top: 86%;
+      height: 34px;
+      border-left: 1px solid rgba(124, 244, 255, 0.46);
+      border-right: 1px solid rgba(124, 244, 255, 0.26);
+      border-radius: 0 0 50% 50%;
+      filter: drop-shadow(0 0 6px rgba(69, 233, 255, 0.5));
+    }
+
+    .jelly::after {
+      left: 38%;
+      right: 38%;
+      height: 44px;
+      border-color: rgba(181, 252, 255, 0.4);
+      transform: translateY(1px);
+    }
+
+    .wrap {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: 100%;
+      height: 100%;
+    }
+
+    .card,
+    .footer {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--surface-line);
+      background: var(--surface);
+      box-shadow: var(--shadow), inset 0 1px 0 rgba(224, 244, 255, 0.08);
+      border-radius: 8px;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .card::before,
+    .footer::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(180deg, rgba(104, 228, 255, 0.1), transparent 36%),
+        radial-gradient(circle at top right, rgba(0, 200, 255, 0.16), transparent 34%);
+      pointer-events: none;
+    }
+
+    .card {
+      padding: 12px 14px;
+    }
+
+    .card[data-card="claude"],
+    .card[data-card="codex"] {
+      min-height: 224px;
+    }
+
+    .header {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      z-index: 1;
+    }
+
+    .header img,
+    .reef-badge {
+      width: 28px;
+      height: 28px;
+      flex: none;
+      border-radius: 50%;
+      border: 1px solid rgba(0, 200, 255, 0.22);
+      background: rgba(0, 40, 80, 0.56);
+      box-shadow: 0 0 14px rgba(69, 233, 255, 0.22), inset 0 0 12px rgba(69, 233, 255, 0.12);
+    }
+
+    .reef-badge {
+      display: grid;
+      place-items: center;
+      color: var(--cyan);
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .header-copy {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.2;
+      font-weight: 600;
+      letter-spacing: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .switch,
+    .range-chip,
+    .action {
+      border: 1px solid rgba(69, 233, 255, 0.46);
+      background: rgba(2, 22, 44, 0.62);
+      color: var(--text);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      box-shadow: 0 0 12px rgba(69, 233, 255, 0.16), inset 0 0 12px rgba(69, 233, 255, 0.08);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    .switch,
+    .range-chip {
+      flex: none;
+      min-height: 28px;
+      padding: 0 12px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    .switch:active,
+    .action:active,
+    .range-chip:active {
+      transform: translateY(1px);
+    }
+
+    .row {
+      position: relative;
+      z-index: 1;
+      padding: 10px 0 0;
+    }
+
+    .row + .row {
+      margin-top: 10px;
+      border-top: 1px solid rgba(0, 200, 255, 0.14);
+    }
+
+    .row-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 6px;
+    }
+
+    .row-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0;
+    }
+
+    .percent {
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .track {
+      position: relative;
+      height: 16px;
+      padding: 2px;
+      overflow: hidden;
+      border-radius: 999px;
+      border: 1px solid rgba(0, 200, 255, 0.22);
+      background: rgba(1, 17, 34, 0.72);
+      box-shadow: inset 0 2px 10px rgba(0, 5, 18, 0.42);
+    }
+
+    .track::before {
+      content: "";
+      position: absolute;
+      inset: 2px;
+      border-radius: inherit;
+      background:
+        repeating-linear-gradient(
+          90deg,
+          transparent 0 calc(10% - 1px),
+          var(--tick) calc(10% - 1px) 10%
+        );
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .track::after {
+      content: "";
+      position: absolute;
+      inset: 1px auto 1px 0;
+      width: 40%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, transparent, rgba(224, 244, 255, 0.48), transparent);
+      animation: sweep 2.6s linear infinite;
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    .fill {
+      position: relative;
+      z-index: 1;
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--accent);
+      box-shadow: 0 0 18px rgba(69, 233, 255, 0.26);
+      transition: width 160ms ease-out, background 160ms ease-out;
+    }
+
+    .reset {
+      margin-top: 5px;
+      font-size: 12px;
+      color: var(--muted);
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .reset[data-warning="true"] {
+      color: var(--danger);
+      font-weight: 600;
+    }
+
+    .row[data-available="false"] .percent,
+    .row[data-available="false"] .reset {
+      color: rgba(122, 184, 212, 0.72);
+    }
+
+    .projects-card {
+      flex: 1;
+      padding-bottom: 12px;
+    }
+
+    [data-project-list] {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      gap: 8px;
+    }
+
+    .proj-row {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(0, 200, 255, 0.16);
+      background: rgba(1, 24, 50, 0.48);
+    }
+
+    .proj-topline {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .proj-rank {
+      display: grid;
+      place-items: center;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: rgba(69, 233, 255, 0.14);
+      color: var(--cyan);
+      font-size: 11px;
+      font-weight: 700;
+      flex: none;
+    }
+
+    .proj-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .proj-tokens {
+      align-self: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    .proj-cost {
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .empty-state {
+      padding: 12px 4px 2px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .footer {
+      padding: 12px 14px;
+    }
+
+    .meta {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      gap: 4px;
+      font-size: 12px;
+      line-height: 1.15;
+      color: var(--muted);
+    }
+
+    .today {
+      position: relative;
+      z-index: 1;
+      margin-top: 5px;
+      padding-top: 5px;
+      border-top: 1px solid rgba(0, 200, 255, 0.14);
+      font-size: 13px;
+      line-height: 1.15;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .actions {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .action {
+      flex: 1;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+    }
+
+    .action.primary {
+      background: rgba(0, 82, 122, 0.58);
+    }
+
+    .action[data-action="install"] {
+      display: none;
+    }
+
+    .footer .action[data-action="switch"] {
+      display: none;
+    }
+
+    .action[data-action="install"][data-visible="true"] {
+      display: inline-block;
+      flex: 1;
+    }
+  </style>
+</head>
+<body>
+  <canvas class="bubble-canvas" aria-hidden="true"></canvas>
+  <div class="sparkles" aria-hidden="true">
+    <span class="spark" style="--x: 12%; --y: 18%; --size: 3px; --duration: 4.6s; --delay: -1.2s"></span>
+    <span class="spark" style="--x: 72%; --y: 11%; --size: 2px; --duration: 5.2s; --delay: -2.1s"></span>
+    <span class="spark" style="--x: 86%; --y: 31%; --size: 4px; --duration: 6s; --delay: -3.2s"></span>
+    <span class="spark" style="--x: 18%; --y: 44%; --size: 2px; --duration: 4.1s; --delay: -0.7s"></span>
+    <span class="spark" style="--x: 58%; --y: 52%; --size: 3px; --duration: 5.6s; --delay: -4.1s"></span>
+    <span class="spark" style="--x: 34%; --y: 72%; --size: 2px; --duration: 4.8s; --delay: -2.8s"></span>
+    <span class="spark" style="--x: 79%; --y: 78%; --size: 3px; --duration: 5.8s; --delay: -1.7s"></span>
+    <span class="spark" style="--x: 45%; --y: 24%; --size: 2px; --duration: 4.9s; --delay: -3.7s"></span>
+  </div>
+  <div class="jellies" aria-hidden="true">
+    <span class="jelly" style="--x: 8%; --y: 12%; --w: 48px; --h: 34px"></span>
+    <span class="jelly" style="--x: 72%; --y: 24%; --w: 42px; --h: 30px"></span>
+    <span class="jelly" style="--x: 18%; --y: 62%; --w: 38px; --h: 28px"></span>
+    <span class="jelly" style="--x: 74%; --y: 68%; --w: 52px; --h: 36px"></span>
+  </div>
+
+  <div class="viewport">
+    <main class="wrap">
+      <section class="card" data-card="claude" style="--accent: var(--claude)">
+        <header class="header">
+          <img src="{{CLAUDE_ICON}}" alt="">
+          <div class="header-copy">
+            <h1 data-i18n="claude_name">Claude Code</h1>
+          </div>
+          <button class="switch" data-action="switch" data-i18n="switch_panel">Switch Panel</button>
+        </header>
+        <div class="row" data-row="session"></div>
+        <div class="row" data-row="weekly"></div>
+      </section>
+
+      <section class="card" data-card="codex" style="--accent: var(--codex)">
+        <header class="header">
+          <img src="{{CODEX_ICON}}" alt="">
+          <div class="header-copy">
+            <h1 data-i18n="codex_name">Codex</h1>
+          </div>
+        </header>
+        <div class="row" data-row="session"></div>
+        <div class="row" data-row="weekly"></div>
+      </section>
+
+      <section class="card projects-card" data-card="projects" style="--accent: var(--projects)">
+        <header class="header">
+          <div class="reef-badge" aria-hidden="true">~</div>
+          <div class="header-copy">
+            <h1 data-i18n="projects_title">Project Usage</h1>
+          </div>
+          <button class="range-chip" data-action="toggle-project-range">Today</button>
+        </header>
+        <div data-project-list></div>
+      </section>
+
+      <section class="footer">
+        <div class="meta">
+          <div data-footer="rate">Rate: --</div>
+          <div data-footer="status">Status: Loading</div>
+        </div>
+        <div class="today" data-footer="today">Today: $0.00 (0 tokens)</div>
+        <div class="actions">
+          <button class="action primary" data-action="refresh" data-i18n="refresh_now">Refresh</button>
+          <button class="action" data-action="switch" data-i18n="switch_panel">Switch</button>
+          <button class="action" data-action="quit" data-i18n="quit">Quit</button>
+          <button class="action" data-action="install" data-i18n="install_hook">Install Hook</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="application/json" id="i18n-data">{{I18N_BUNDLE}}</script>
+  <script>
+    function loadI18nBundle() {
+      const fallback = {
+        en: {
+          claude_name: "Claude Code",
+          codex_name: "Codex",
+          projects_title: "Project Usage",
+          switch_panel: "Switch Panel",
+          refresh_now: "Refresh",
+          install_hook: "Install Hook",
+          quit: "Quit",
+          project_range_1d: "Today",
+          project_range_7d: "7 Days",
+          project_range_30d: "Month",
+          session_label: "Session",
+          weekly_label: "Weekly",
+          projects_empty: "No records",
+          reset_placeholder: "Resets in --",
+          rate_text: "Rate: {value}",
+          status_text: "Status: {value}",
+          today_text: "Today: ${cost} ({tokens} tokens)",
+        },
+      };
+      const node = document.getElementById("i18n-data");
+      const raw = node ? node.textContent.trim() : "";
+      if (!raw || raw.startsWith("{{")) return fallback;
+      try {
+        return JSON.parse(raw);
+      } catch (_error) {
+        return fallback;
+      }
+    }
+
+    const I18N = loadI18nBundle();
+    const FALLBACK_LANGUAGE = "en";
+    const root = document.documentElement;
+    let currentLanguage = "en";
+    let projectRange = "1d";
+    let latestState = null;
+
+    function languageTable(language) {
+      return I18N[language] || I18N[FALLBACK_LANGUAGE] || {};
+    }
+
+    function t(key, params = {}) {
+      const template = languageTable(currentLanguage)[key] || languageTable(FALLBACK_LANGUAGE)[key] || key;
+      return template.replace(/\{(\w+)\}/g, (_, name) => `${params[name] ?? ""}`);
+    }
+
+    function labels() {
+      return {
+        session: t("session_label"),
+        weekly: t("weekly_label"),
+      };
+    }
+
+    function projectRangeLabel(range) {
+      if (range === "7d") return t("project_range_7d");
+      if (range === "30d") return t("project_range_30d");
+      return t("project_range_1d");
+    }
+
+    function applyStaticText() {
+      document.documentElement.lang = currentLanguage === "zh-TW" ? "zh-Hant" : currentLanguage;
+      document.querySelectorAll("[data-i18n]").forEach((node) => {
+        const key = node.dataset.i18n;
+        if (key) node.textContent = t(key);
+      });
+      const rangeButton = document.querySelector('[data-action="toggle-project-range"]');
+      if (rangeButton) rangeButton.textContent = projectRangeLabel(projectRange);
+    }
+
+    window.usageSetLanguage = function usageSetLanguage(language) {
+      currentLanguage = I18N[language] ? language : FALLBACK_LANGUAGE;
+      applyStaticText();
+      if (latestState) {
+        window.usageApplyState({ ...latestState, language: currentLanguage });
+      }
+    };
+
+    function cssVar(name) {
+      return getComputedStyle(root).getPropertyValue(name).trim();
+    }
+
+    function colorFor(percent, fallback) {
+      if (typeof percent !== "number") return fallback;
+      if (percent >= 80) return cssVar("--danger");
+      if (percent >= 50) return cssVar("--warn");
+      return fallback;
+    }
+
+    function renderRow(card, key, row) {
+      const el = document.querySelector(`[data-card="${card}"] [data-row="${key}"]`);
+      if (!el) return;
+      const cardEl = el.closest(".card");
+      if (!cardEl) return;
+      const data = row || {
+        percent: null,
+        percentText: "--",
+        resetText: t("reset_placeholder"),
+        warning: false,
+        available: false,
+      };
+      const available = data.available === true && typeof data.percent === "number";
+      const accent = getComputedStyle(cardEl).getPropertyValue("--accent").trim();
+      const color = colorFor(data.percent, accent);
+      el.dataset.available = available ? "true" : "false";
+      el.innerHTML = `
+        <div class="row-head">
+          <div class="row-title"></div>
+          <div class="percent"></div>
+        </div>
+        <div class="track"><div class="fill"></div></div>
+        <div class="reset"></div>
+      `;
+      const title = el.querySelector(".row-title");
+      const percent = el.querySelector(".percent");
+      const reset = el.querySelector(".reset");
+      const fill = el.querySelector(".fill");
+      if (!title || !percent || !reset || !fill) return;
+      title.textContent = labels()[key];
+      percent.textContent = data.percentText || "--";
+      reset.textContent = data.resetText || t("reset_placeholder");
+      reset.dataset.warning = data.warning === true ? "true" : "false";
+      percent.style.color = available ? color : "";
+      fill.style.width = available ? `${Math.max(0, Math.min(100, data.percent))}%` : "0%";
+      fill.style.background = color;
+    }
+
+    function applyCard(name, rows) {
+      renderRow(name, "session", rows && rows.session);
+      renderRow(name, "weekly", rows && rows.weekly);
+    }
+
+    function projectMarkup(project, index) {
+      const row = document.createElement("div");
+      const topline = document.createElement("div");
+      const rank = document.createElement("span");
+      const name = document.createElement("span");
+      const tokens = document.createElement("span");
+      const cost = document.createElement("span");
+      row.className = "proj-row";
+      topline.className = "proj-topline";
+      rank.className = "proj-rank";
+      name.className = "proj-name";
+      tokens.className = "proj-tokens";
+      cost.className = "proj-cost";
+      rank.textContent = `${index + 1}`;
+      name.textContent = project.name || "";
+      tokens.textContent = project.tokensText || "";
+      cost.textContent = project.costText || "";
+      topline.append(rank, name);
+      row.append(topline, tokens, cost);
+      return row;
+    }
+
+    function renderProjects(projects) {
+      const list = document.querySelector("[data-project-list]");
+      if (!list) return;
+      list.replaceChildren();
+      const items = (projects || []).slice(0, 3);
+      if (items.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "empty-state";
+        empty.textContent = t("projects_empty");
+        list.append(empty);
+        return;
+      }
+      items.forEach((project, index) => {
+        list.append(projectMarkup(project, index));
+      });
+    }
+
+    function applyFooter(footer) {
+      const rate = document.querySelector('[data-footer="rate"]');
+      const status = document.querySelector('[data-footer="status"]');
+      const today = document.querySelector('[data-footer="today"]');
+      const install = document.querySelector('[data-action="install"]');
+      if (rate) rate.textContent = footer.rate || t("rate_text", { value: "--" });
+      if (status) status.textContent = footer.status || t("status_text", { value: "--" });
+      if (today) today.textContent = footer.today || t("today_text", { cost: "0.00", tokens: "0" });
+      if (install) install.dataset.visible = footer.showInstall === true ? "true" : "false";
+    }
+
+    window.usageApplyState = function usageApplyState(state) {
+      currentLanguage = I18N[state.language] ? state.language : currentLanguage;
+      applyStaticText();
+      applyCard("claude", state.claude);
+      applyCard("codex", state.codex);
+      latestState = state;
+      renderProjects(
+        projectRange === "1d" ? state.projects
+        : projectRange === "7d" ? state.projects7d
+        : state.projects30d
+      );
+      applyFooter(state.footer || {});
+    };
+
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-action]");
+      if (!button) return;
+      if (button.dataset.action === "toggle-project-range") {
+        projectRange = projectRange === "1d" ? "7d" : projectRange === "7d" ? "30d" : "1d";
+        button.textContent = projectRangeLabel(projectRange);
+        if (latestState) {
+          renderProjects(
+            projectRange === "1d" ? latestState.projects
+            : projectRange === "7d" ? latestState.projects7d
+            : latestState.projects30d
+          );
+        }
+        return;
+      }
+      const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.usage;
+      if (bridge && typeof bridge.postMessage === "function") {
+        bridge.postMessage(button.dataset.action);
+      }
+    });
+
+    const canvas = document.querySelector(".bubble-canvas");
+    const ctx = canvas.getContext("2d");
+    const bubbles = [];
+    const bubbleCount = 42;
+    let width = 0;
+    let height = 0;
+    let pixelRatio = 1;
+
+    function resetBubble(bubble, fromBottom = true) {
+      bubble.x = Math.random() * width;
+      bubble.y = fromBottom ? height + Math.random() * 80 : Math.random() * height;
+      bubble.r = 2 + Math.random() * 6;
+      bubble.speed = 0.22 + Math.random() * 0.62;
+      bubble.drift = 0.25 + Math.random() * 0.55;
+      bubble.phase = Math.random() * Math.PI * 2;
+      bubble.opacity = 0.3 + Math.random() * 0.4;
+    }
+
+    function resizeCanvas() {
+      pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = Math.floor(width * pixelRatio);
+      canvas.height = Math.floor(height * pixelRatio);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      if (bubbles.length === 0) {
+        for (let i = 0; i < bubbleCount; i += 1) {
+          const bubble = {};
+          resetBubble(bubble, false);
+          bubbles.push(bubble);
+        }
+      }
+    }
+
+    function drawBubbles(time) {
+      ctx.clearRect(0, 0, width, height);
+      bubbles.forEach((bubble) => {
+        bubble.y -= bubble.speed;
+        bubble.x += Math.sin(time * 0.0012 + bubble.phase) * bubble.drift;
+        if (bubble.y < -bubble.r * 3) resetBubble(bubble);
+        if (bubble.x < -10) bubble.x = width + 10;
+        if (bubble.x > width + 10) bubble.x = -10;
+        ctx.beginPath();
+        ctx.arc(bubble.x, bubble.y, bubble.r, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(159, 245, 255, ${bubble.opacity})`;
+        ctx.fillStyle = `rgba(159, 245, 255, ${bubble.opacity * 0.16})`;
+        ctx.lineWidth = 1;
+        ctx.fill();
+        ctx.stroke();
+      });
+    }
+
+    const jellyNodes = Array.from(document.querySelectorAll(".jelly")).map((node, index) => ({
+      node,
+      index,
+      phase: Math.random() * Math.PI * 2,
+    }));
+
+    function moveJellies(time) {
+      jellyNodes.forEach(({ node, index, phase }) => {
+        const y = Math.sin(time * 0.001 + phase) * (8 + index * 2);
+        const x = Math.sin(time * 0.00055 + phase) * 5;
+        const pulse = 1 + Math.sin(time * 0.0014 + phase) * 0.035;
+        node.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${pulse})`;
+      });
+    }
+
+    function animate(time) {
+      drawBubbles(time);
+      moveJellies(time);
+      window.requestAnimationFrame(animate);
+    }
+
+    window.addEventListener("resize", resizeCanvas);
+    resizeCanvas();
+    window.requestAnimationFrame(animate);
+
+    window.usageApplyState({
+      language: "en",
+      claude: { session: {}, weekly: {} },
+      codex: { session: {}, weekly: {} },
+      projects: [],
+      projects7d: [],
+      projects30d: [],
+      footer: { rate: "Rate: --", status: "Status: Loading", today: "Today: $0.00 (0 tokens)", showInstall: false }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,812 @@
+# mypy: disable-error-code="import-untyped,misc"
+# PyObjC modules do not ship type stubs, and their base classes resolve to Any in mypy.
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import io
+import json
+import logging
+import os
+import threading
+import time
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
+
+import objc
+from AppKit import (
+    NSAlert,
+    NSApp,
+    NSApplication,
+    NSApplicationActivationPolicyAccessory,
+    NSMakePoint,
+    NSMakeSize,
+    NSMenu,
+    NSMenuItem,
+    NSMinYEdge,
+    NSPopover,
+    NSPopoverBehaviorTransient,
+    NSStatusBar,
+    NSVariableStatusItemLength,
+    NSViewController,
+)
+from Foundation import (
+    NSBundle,
+    NSLocale,
+    NSObject,
+    NSRunLoop,
+    NSRunLoopCommonModes,
+    NSTimer,
+)
+
+import codex_loader
+import login_item
+import panels
+from burn_rate import WARNING_PERCENT_FLOOR, BurnRateTracker
+from history_loader import UsageEntry, load_entries
+from panels.base import Panel as UsagePanel
+from panels.base import load_active_panel_id, save_active_panel_id
+from pricing import calculate_cost
+from usage_client import ClaudeUsageClient, PollOutcome, PollState
+from usage_rate import GROUP_NAMES, UsageRateTracker
+
+BUTTON_HEIGHT = 32.0
+INSTALL_BUTTON_EXTRA_HEIGHT = BUTTON_HEIGHT + 10.0
+CLAUDE_COLOR = (244 / 255, 145 / 255, 100 / 255)
+CODEX_COLOR = (88 / 255, 214 / 255, 230 / 255)
+WARN_COLOR = (255 / 255, 196 / 255, 57 / 255)
+DANGER_COLOR = (255 / 255, 69 / 255, 58 / 255)
+
+logger = logging.getLogger(__name__)
+
+
+def _i18n_path() -> Path:
+    try:
+        bundle_path = NSBundle.mainBundle().resourcePath()
+        if bundle_path:
+            candidate = Path(str(bundle_path)) / "i18n.json"
+            if candidate.exists():
+                return candidate
+    except Exception:
+        pass
+    return Path(__file__).with_name("i18n.json")
+
+
+I18N_PATH = _i18n_path()
+
+
+def _bar_color(pct: float, brand: tuple[float, float, float]) -> tuple[float, float, float]:
+    if pct >= 80:
+        return DANGER_COLOR
+    if pct >= 50:
+        return WARN_COLOR
+    return brand
+
+
+@lru_cache(maxsize=1)
+def _load_i18n_bundle() -> dict[str, dict[str, str]]:
+    data = json.loads(I18N_PATH.read_text(encoding="utf-8"))
+    return {
+        str(lang): {str(key): str(value) for key, value in values.items()}
+        for lang, values in data.items()
+    }
+
+
+def _normalize_language(code: str | None) -> str:
+    if not code:
+        return "en"
+    normalized = code.strip().lower().replace("_", "-")
+    if normalized in {"zh-tw", "zh-hant"} or normalized.startswith("zh-tw-"):
+        return "zh-TW"
+    if normalized in {"zh-cn", "zh-hans", "zh"} or normalized.startswith("zh-cn-"):
+        return "zh-CN"
+    if normalized.startswith("zh-hans"):
+        return "zh-CN"
+    if normalized.startswith("zh-hant"):
+        return "zh-TW"
+    if normalized.startswith("ja"):
+        return "ja"
+    if normalized.startswith("ko"):
+        return "ko"
+    return "en"
+
+
+def _detect_language() -> str:
+    if override := os.environ.get("USAGE_LANG"):
+        return _normalize_language(override)
+    try:
+        # preferredLanguages reflects the user's system language list and is not
+        # affected by the bundle's CFBundleDevelopmentRegion / .lproj mapping.
+        preferred = NSLocale.preferredLanguages()
+        if preferred:
+            return _normalize_language(str(preferred[0]))
+        locale = NSLocale.currentLocale()
+        identifier_attr = getattr(locale, "localeIdentifier", None)
+        identifier = identifier_attr() if callable(identifier_attr) else identifier_attr
+        return _normalize_language(str(identifier) if identifier is not None else None)
+    except Exception:
+        return "en"
+
+
+def _t(language: str, key: str, **kwargs: object) -> str:
+    bundle = _load_i18n_bundle()
+    table = bundle.get(language) or bundle["en"]
+    template = table.get(key) or bundle["en"].get(key) or key
+    return template.format(**kwargs)
+
+
+def _group_name(group: int, language: str) -> str:
+    return _t(language, f"group_{GROUP_NAMES[group].lower()}")
+
+
+def _panel_title(panel: UsagePanel, language: str) -> str:
+    if panel.id == "classic":
+        return _t(language, "panel_default_name")
+    return panel.display_name
+
+
+_APP_DELEGATE: AppDelegate | None = None
+
+
+@dataclass(slots=True)
+class QuotaRowState:
+    title: str
+    percent: float | None
+    percent_text: str
+    reset_text: str
+    color: tuple[float, float, float]
+    warning: bool = False
+    available: bool = True
+
+
+@dataclass(slots=True)
+class PopoverState:
+    language: str
+    claude_session: QuotaRowState
+    claude_weekly: QuotaRowState
+    codex_session: QuotaRowState
+    codex_weekly: QuotaRowState
+    projects: list[tuple[str, int, float | None]]
+    projects_7d: list[tuple[str, int, float | None]]
+    projects_30d: list[tuple[str, int, float | None]]
+    rate_text: str
+    status_text: str
+    today_text: str
+    show_install_button: bool = False
+
+
+def format_human_time(seconds: float, language: str = "en") -> str:
+    if seconds <= 0:
+        return _t(language, "duration_minutes", minutes=0)
+    days, remainder = divmod(int(seconds), 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, _ = divmod(remainder, 60)
+
+    if days > 0:
+        return _t(language, "duration_days", days=days, hours=hours)
+    if hours > 0:
+        return _t(language, "duration_hours", hours=hours, minutes=minutes)
+    return _t(language, "duration_minutes", minutes=minutes)
+
+
+class PopoverViewController(NSViewController):
+    content_view = objc.ivar()
+    panel = objc.ivar()
+    delegate = objc.ivar()
+
+    def initWithPanel_delegate_(self, panel: UsagePanel, delegate: Any) -> PopoverViewController:
+        self = objc.super(PopoverViewController, self).init()
+        if self is None:
+            return None
+        self.panel = panel
+        self.delegate = delegate
+        self.content_view = panel.build_view(delegate)
+        self.setView_(self.content_view)
+        return self
+
+    def rebuildWithPanel_(self, panel: UsagePanel) -> None:
+        if hasattr(self.content_view, "teardown"):
+            self.content_view.teardown()
+        self.panel = panel
+        self.content_view = panel.build_view(self.delegate)
+        self.setView_(self.content_view)
+
+    def setState_(self, state: PopoverState) -> None:
+        self.view().setFrameSize_(_popover_size(state, self.panel))
+        self.panel.apply_state(self.content_view, state)
+
+
+class AppDelegate(NSObject):
+    status_item = objc.ivar()
+    popover = objc.ivar()
+    popover_controller = objc.ivar()
+    timer = objc.ivar()
+    mock = objc.ivar()
+    interval = objc.ivar()
+    tracker = objc.ivar()
+    latest_state = objc.ivar()
+    active_panel = objc.ivar()
+    codex_5h_pct = objc.ivar()
+    burn_rate_trackers = objc.ivar()
+    _refresh_in_flight = objc.ivar()
+    language = objc.ivar()
+
+    def initWithMock_interval_(self, mock: bool, interval: int) -> AppDelegate:
+        self = objc.super(AppDelegate, self).init()
+        if self is None:
+            return None
+        self.mock = mock
+        self.interval = max(30, interval)
+        self.tracker = UsageRateTracker(mock=mock)
+        self.language = _detect_language()
+        self.codex_5h_pct = None
+        self.latest_state = _empty_state(self.language)
+        self.active_panel = panels.get_panel(load_active_panel_id())
+        self.burn_rate_trackers = {
+            "claude_session": BurnRateTracker(),
+            "claude_weekly": BurnRateTracker(),
+            "codex_session": BurnRateTracker(),
+            "codex_weekly": BurnRateTracker(),
+        }
+        self._refresh_in_flight = False
+        return self
+
+    def applicationDidFinishLaunching_(self, notification: Any) -> None:
+        NSApp.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
+        self.status_item = NSStatusBar.systemStatusBar().statusItemWithLength_(
+            NSVariableStatusItemLength,
+        )
+        button = self.status_item.button()
+        button.setTitle_("🐾 ...")
+        button.setTarget_(self)
+        button.setAction_("togglePopover:")
+
+        self.popover_controller = PopoverViewController.alloc().initWithPanel_delegate_(
+            self.active_panel,
+            self,
+        )
+        self.popover = NSPopover.alloc().init()
+        self.popover.setBehavior_(NSPopoverBehaviorTransient)
+        self.popover.setContentSize_(_popover_size(self.latest_state, self.active_panel))
+        self.popover.setContentViewController_(self.popover_controller)
+
+        self._refresh()
+        self.timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+            self.interval,
+            self,
+            "timerFired:",
+            None,
+            True,
+        )
+        NSRunLoop.currentRunLoop().addTimer_forMode_(self.timer, NSRunLoopCommonModes)
+
+    def timerFired_(self, timer: Any) -> None:
+        self._refresh()
+
+    def refreshNow_(self, sender: Any) -> None:
+        self._refresh()
+
+    def installHook_(self, sender: Any) -> None:
+        thread = threading.Thread(target=self._install_hook_in_background, daemon=True)
+        thread.start()
+
+    def quitApp_(self, sender: Any) -> None:
+        if self.timer is not None:
+            self.timer.invalidate()
+        NSApp.terminate_(sender)
+
+    def switchPanel_(self, sender: Any) -> None:
+        menu = NSMenu.alloc().initWithTitle_(_t(self.language, "switch_panel"))
+        for panel in panels.all_panels():
+            item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                _panel_title(panel, self.language),
+                "selectPanel:",
+                "",
+            )
+            item.setTarget_(self)
+            item.setRepresentedObject_(panel.id)
+            item.setState_(1 if panel.id == self.active_panel.id else 0)
+            menu.addItem_(item)
+        menu.addItem_(NSMenuItem.separatorItem())
+        launch_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            _t(self.language, "launch_at_login"),
+            "toggleLaunchAtLogin:",
+            "",
+        )
+        launch_item.setTarget_(self)
+        launch_item.setState_(1 if login_item.is_enabled() else 0)
+        menu.addItem_(launch_item)
+        menu.popUpMenuPositioningItem_atLocation_inView_(None, NSMakePoint(0, 0), sender)
+
+    def selectPanel_(self, sender: Any) -> None:
+        panel_id = str(sender.representedObject())
+        self._set_active_panel_id(panel_id)
+
+    def toggleLaunchAtLogin_(self, sender: Any) -> None:
+        try:
+            if login_item.is_enabled():
+                login_item.disable()
+            else:
+                login_item.enable()
+        except Exception:
+            if os.environ.get("USAGE_DEBUG") == "1":
+                logger.warning("toggle launch at login failed", exc_info=True)
+
+    def _set_active_panel_id(self, panel_id: str) -> None:
+        panel = panels.get_panel(panel_id)
+        save_active_panel_id(panel.id)
+        self.active_panel = panel
+        self.popover_controller.rebuildWithPanel_(panel)
+        self.popover_controller.setState_(self.latest_state)
+        self.popover.setContentSize_(_popover_size(self.latest_state, panel))
+
+    def togglePopover_(self, sender: Any) -> None:
+        if self.popover.isShown():
+            self.popover.performClose_(sender)
+            return
+        self.popover_controller.setState_(self.latest_state)
+        self.popover.setContentSize_(_popover_size(self.latest_state, self.active_panel))
+        button = self.status_item.button()
+        self.popover.showRelativeToRect_ofView_preferredEdge_(button.bounds(), button, NSMinYEdge)
+
+    def _refresh(self) -> None:
+        if self._refresh_in_flight:
+            return
+        self._refresh_in_flight = True
+        thread = threading.Thread(target=self._refresh_in_background, daemon=True)
+        thread.start()
+
+    def _refresh_in_background(self) -> None:
+        try:
+            outcome = asyncio.run(self._fetch())
+            codex_rows, codex_5h_pct = self._codex_rows()
+            all_entries = self._load_history_entries()
+            project_rows = self._project_rows(hours_back=24, entries=all_entries)
+            project_rows_7d = self._project_rows(hours_back=168, entries=all_entries)
+            project_rows_30d = self._project_rows(hours_back=720, entries=all_entries)
+            state = self._state_from_outcome(
+                outcome,
+                codex_rows,
+                project_rows,
+                project_rows_7d,
+                project_rows_30d,
+                history_entries=all_entries,
+            )
+        except Exception as exc:
+            if os.environ.get("USAGE_DEBUG") == "1":
+                logger.warning("refresh failed", exc_info=True)
+            codex_5h_pct = None
+            state = _error_state(type(exc).__name__, self.mock, self.language)
+
+        result = {"state": state, "codex_5h_pct": codex_5h_pct}
+        self.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "_applyRefreshResult:",
+            result,
+            False,
+        )
+
+    def _applyRefreshResult_(self, result: dict[str, Any]) -> None:
+        state = result["state"]
+        codex_5h_pct = result["codex_5h_pct"]
+        self.codex_5h_pct = codex_5h_pct
+        self.latest_state = state
+        self.popover_controller.setState_(state)
+        self.popover.setContentSize_(_popover_size(state, self.active_panel))
+        self._inject_web_language(state.language)
+        self.status_item.button().setTitle_(self._compose_title(state))
+        self._refresh_in_flight = False
+
+    def _inject_web_language(self, language: str) -> None:
+        content_view = self.popover_controller.content_view
+        if not hasattr(content_view, "evaluateJavaScript_completionHandler_"):
+            return
+        content_view.evaluateJavaScript_completionHandler_(
+            f"window.usageSetLanguage && window.usageSetLanguage({json.dumps(language)})",
+            None,
+        )
+
+    def _install_hook_in_background(self) -> None:
+        output = io.StringIO()
+        exit_code = 1
+        try:
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+                import setup_hook
+
+                exit_code = setup_hook.setup()
+        except SystemExit as exc:
+            exit_code = exc.code if isinstance(exc.code, int) else 1
+            if exc.code:
+                print(exc.code, file=output)
+        except Exception as exc:
+            print(f"{type(exc).__name__}: {exc}", file=output)
+
+        result = {
+            "success": exit_code == 0,
+            "message": output.getvalue().strip(),
+        }
+        self.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "_finishHookInstall:",
+            result,
+            False,
+        )
+
+    def _finishHookInstall_(self, result: dict[str, Any]) -> None:
+        alert = NSAlert.alloc().init()
+        if result["success"]:
+            alert.setMessageText_(_t(self.language, "hook_installed_restart"))
+        else:
+            alert.setMessageText_(_t(self.language, "hook_install_failed"))
+            alert.setInformativeText_(
+                result["message"] or _t(self.language, "hook_install_failed_default")
+            )
+        alert.runModal()
+        self._refresh()
+
+    async def _fetch(self) -> PollOutcome:
+        client = ClaudeUsageClient(mock=self.mock)
+        try:
+            return await client.fetch_once()
+        finally:
+            await client.aclose()
+
+    def _state_from_outcome(
+        self,
+        outcome: PollOutcome,
+        codex_rows: tuple[QuotaRowState, QuotaRowState],
+        projects: list[tuple[str, int, float | None]],
+        project_rows_7d: list[tuple[str, int, float | None]],
+        project_rows_30d: list[tuple[str, int, float | None]],
+        history_entries: list[UsageEntry] | None = None,
+    ) -> PopoverState:
+        now = time.time()
+        today_text = _today_title(self.mock, self.language, entries=history_entries)
+        group_name = _group_name(self.tracker.group(), self.language)
+        status_text = _t(
+            self.language,
+            "status_text",
+            value=outcome.message or _t(self.language, "status_loading"),
+        )
+
+        if outcome.state == PollState.SUCCESS and outcome.snapshot is not None:
+            snapshot = outcome.snapshot
+            if snapshot.current_percent is not None:
+                self.burn_rate_trackers["claude_session"].record(
+                    snapshot.polled_at,
+                    float(snapshot.current_percent),
+                )
+            if snapshot.weekly_percent is not None:
+                self.burn_rate_trackers["claude_weekly"].record(
+                    snapshot.polled_at,
+                    float(snapshot.weekly_percent),
+                )
+            claude_session = _quota_row(
+                "Session",
+                float(snapshot.current_percent) if snapshot.current_percent is not None else None,
+                snapshot.current_reset_at,
+                now,
+                CLAUDE_COLOR,
+                self.language,
+                forecast_seconds=self.burn_rate_trackers["claude_session"].forecast_seconds(),
+            )
+            claude_weekly = _quota_row(
+                "Weekly",
+                float(snapshot.weekly_percent) if snapshot.weekly_percent is not None else None,
+                snapshot.weekly_reset_at,
+                now,
+                CLAUDE_COLOR,
+                self.language,
+                forecast_seconds=self.burn_rate_trackers["claude_weekly"].forecast_seconds(),
+            )
+            status_text = _t(
+                self.language,
+                "status_text",
+                value=outcome.message or _t(self.language, "status_synced"),
+            )
+        else:
+            claude_session = _missing_row("Session", CLAUDE_COLOR, self.language)
+            claude_weekly = _missing_row("Weekly", CLAUDE_COLOR, self.language)
+            status_text = _t(
+                self.language,
+                "status_text",
+                value=outcome.message or _t(self.language, "status_no_data"),
+            )
+
+        return PopoverState(
+            language=self.language,
+            claude_session=claude_session,
+            claude_weekly=claude_weekly,
+            codex_session=codex_rows[0],
+            codex_weekly=codex_rows[1],
+            projects=projects,
+            projects_7d=project_rows_7d,
+            projects_30d=project_rows_30d,
+            rate_text=_t(self.language, "rate_text", value=group_name),
+            status_text=status_text,
+            today_text=today_text,
+            show_install_button=outcome.state == PollState.TOKEN_ERROR,
+        )
+
+    def _codex_rows(self) -> tuple[tuple[QuotaRowState, QuotaRowState], int | None]:
+        if self.mock:
+            now = time.time()
+            self.burn_rate_trackers["codex_session"].record(now, 12.0)
+            self.burn_rate_trackers["codex_weekly"].record(now, 28.0)
+            rows = (
+                _quota_row(
+                    "Session",
+                    12.0,
+                    now + (4 * 3600) + (15 * 60),
+                    now,
+                    CODEX_COLOR,
+                    self.language,
+                    forecast_seconds=self.burn_rate_trackers["codex_session"].forecast_seconds(),
+                ),
+                _quota_row(
+                    "Weekly",
+                    28.0,
+                    now + (4 * 86400),
+                    now,
+                    CODEX_COLOR,
+                    self.language,
+                    forecast_seconds=self.burn_rate_trackers["codex_weekly"].forecast_seconds(),
+                ),
+            )
+            return rows, 12
+
+        try:
+            rate_limits = codex_loader.load_rate_limits()
+        except Exception:
+            if os.environ.get("USAGE_DEBUG") == "1":
+                logger.warning("codex rate limits load failed", exc_info=True)
+            rate_limits = None
+
+        if rate_limits is None:
+            rows = (
+                _missing_row("Session", CODEX_COLOR, self.language),
+                _missing_row("Weekly", CODEX_COLOR, self.language),
+            )
+            return rows, None
+
+        now = time.time()
+        codex_5h_pct = (
+            round(rate_limits.five_hour_pct) if rate_limits.five_hour_pct is not None else None
+        )
+        if rate_limits.five_hour_pct is not None:
+            self.burn_rate_trackers["codex_session"].record(now, rate_limits.five_hour_pct)
+        if rate_limits.seven_day_pct is not None:
+            self.burn_rate_trackers["codex_weekly"].record(now, rate_limits.seven_day_pct)
+        rows = (
+            _quota_row(
+                "Session",
+                rate_limits.five_hour_pct,
+                rate_limits.five_hour_resets_at,
+                now,
+                CODEX_COLOR,
+                self.language,
+                forecast_seconds=self.burn_rate_trackers["codex_session"].forecast_seconds(),
+            ),
+            _quota_row(
+                "Weekly",
+                rate_limits.seven_day_pct,
+                rate_limits.seven_day_resets_at,
+                now,
+                CODEX_COLOR,
+                self.language,
+                forecast_seconds=self.burn_rate_trackers["codex_weekly"].forecast_seconds(),
+            ),
+        )
+        return rows, codex_5h_pct
+
+    def _load_history_entries(self) -> list[UsageEntry]:
+        if self.mock:
+            return []
+        try:
+            return load_entries(hours_back=720)
+        except Exception:
+            if os.environ.get("USAGE_DEBUG") == "1":
+                logger.warning("project usage load failed", exc_info=True)
+            return []
+
+    def _project_rows(
+        self,
+        hours_back: int = 24,
+        entries: list[UsageEntry] | None = None,
+    ) -> list[tuple[str, int, float | None]]:
+        if self.mock:
+            if hours_back <= 24:
+                return [
+                    ("usage", 11_200_000, 6.47),
+                    ("FinMind", 3_100_000, 1.82),
+                    ("AI客服", 800_000, 0.48),
+                ]
+            if hours_back <= 168:
+                return [
+                    ("usage", 78_400_000, 45.20),
+                    ("FinMind", 21_700_000, 12.74),
+                    ("AI客服", 5_600_000, 3.36),
+                ]
+            return [
+                ("usage", 312_000_000, 180.50),
+                ("FinMind", 86_400_000, 50.12),
+                ("AI客服", 22_000_000, 13.20),
+            ]
+
+        if entries is None:
+            try:
+                resolved = load_entries(hours_back=hours_back)
+            except Exception:
+                if os.environ.get("USAGE_DEBUG") == "1":
+                    logger.warning("project usage load failed", exc_info=True)
+                return []
+        else:
+            cutoff = datetime.now(tz=UTC) - timedelta(hours=hours_back)
+            resolved = [e for e in entries if e.timestamp >= cutoff]
+
+        aggregates: dict[str, list[float]] = {}
+        for entry in resolved:
+            bucket = aggregates.setdefault(entry.project, [0.0, 0.0])
+            bucket[0] += entry.total_tokens
+            bucket[1] += calculate_cost(entry)
+
+        ranked = sorted(
+            aggregates.items(),
+            key=lambda item: (int(item[1][0]), item[0]),
+            reverse=True,
+        )
+        rows: list[tuple[str, int, float | None]] = []
+        for project, (tokens, cost) in ranked[:3]:
+            rows.append(
+                (
+                    project,
+                    int(tokens),
+                    cost,
+                )
+            )
+        return rows
+
+    def _compose_title(self, state: PopoverState) -> str:
+        base = (
+            "🐾 --"
+            if state.claude_session.percent is None
+            else f"🐾 {_format_percent(state.claude_session.percent)}%"
+        )
+        if self.codex_5h_pct is None:
+            return base
+        return f"{base} · 📜 {self.codex_5h_pct}%"
+
+
+def run_app(mock: bool = False, interval: int = 60) -> None:
+    global _APP_DELEGATE
+    app = NSApplication.sharedApplication()
+    _APP_DELEGATE = AppDelegate.alloc().initWithMock_interval_(mock, interval)
+    app.setDelegate_(_APP_DELEGATE)
+    app.run()
+
+
+def _popover_size(state: PopoverState, panel: UsagePanel | None = None) -> Any:
+    active_panel = panel if panel is not None else panels.get_panel("classic")
+    width, base_height = active_panel.preferred_size()
+    height = base_height + (INSTALL_BUTTON_EXTRA_HEIGHT if state.show_install_button else 0.0)
+    return NSMakeSize(width, height)
+
+
+def _empty_state(language: str = "en") -> PopoverState:
+    return PopoverState(
+        language=language,
+        claude_session=_missing_row("Session", CLAUDE_COLOR, language),
+        claude_weekly=_missing_row("Weekly", CLAUDE_COLOR, language),
+        codex_session=_missing_row("Session", CODEX_COLOR, language),
+        codex_weekly=_missing_row("Weekly", CODEX_COLOR, language),
+        projects=[],
+        projects_7d=[],
+        projects_30d=[],
+        rate_text=_t(language, "rate_text", value="--"),
+        status_text=_t(language, "status_text", value=_t(language, "status_loading")),
+        today_text=_t(language, "today_text", cost="0.00", tokens="0"),
+        show_install_button=False,
+    )
+
+
+def _error_state(message: str, mock: bool, language: str = "en") -> PopoverState:
+    state = _empty_state(language)
+    state.status_text = _t(
+        language,
+        "status_text",
+        value=_t(language, "status_error", message=message),
+    )
+    state.today_text = _today_title(mock, language)
+    state.show_install_button = False
+    return state
+
+
+def _quota_row(
+    title: str,
+    pct: float | None,
+    resets_at: float | None,
+    now: float,
+    color: tuple[float, float, float],
+    language: str = "en",
+    forecast_seconds: float | None = None,
+) -> QuotaRowState:
+    if pct is None or resets_at is None:
+        return _missing_row(title, color, language)
+    pct = max(0.0, min(100.0, float(pct)))
+    time_to_reset = resets_at - now
+    warning_seconds: float | None = None
+    if (
+        forecast_seconds is not None
+        and 0 < forecast_seconds < time_to_reset
+        and pct >= WARNING_PERCENT_FLOOR
+    ):
+        warning_seconds = forecast_seconds
+    warning = warning_seconds is not None
+    if warning_seconds is not None:
+        reset_text = _t(
+            language,
+            "burn_warning",
+            empty=format_human_time(warning_seconds, language),
+            reset=format_human_time(time_to_reset, language),
+        )
+    else:
+        reset_text = _t(language, "reset_in", time=format_human_time(time_to_reset, language))
+    return QuotaRowState(
+        title=title,
+        percent=pct,
+        percent_text=_t(language, "percent_used", value=_format_percent(pct)),
+        reset_text=reset_text,
+        color=_bar_color(pct, color),
+        warning=warning,
+        available=True,
+    )
+
+
+def _missing_row(
+    title: str,
+    color: tuple[float, float, float],
+    language: str = "en",
+) -> QuotaRowState:
+    return QuotaRowState(
+        title=title,
+        percent=None,
+        percent_text="--",
+        reset_text=_t(language, "reset_placeholder"),
+        color=color,
+        available=False,
+    )
+
+
+def _today_title(
+    mock: bool = False,
+    language: str = "en",
+    entries: list[UsageEntry] | None = None,
+) -> str:
+    if mock:
+        return _t(language, "today_text", cost="45.20", tokens="50,193,442")
+
+    try:
+        today = datetime.now().astimezone().date()
+        total_tokens = 0
+        total_cost = 0.0
+
+        history = entries if entries is not None else load_entries(hours_back=24)
+        all_entries = list(history) + codex_loader.load_entries(hours_back=24)
+        for entry in all_entries:
+            if entry.timestamp.astimezone().date() != today:
+                continue
+            total_tokens += entry.total_tokens
+            total_cost += calculate_cost(entry)
+    except Exception:
+        if os.environ.get("USAGE_DEBUG") == "1":
+            logger.warning("today totals load failed", exc_info=True)
+        return _t(language, "today_text", cost="0.00", tokens="0")
+
+    return _t(language, "today_text", cost=f"{total_cost:.2f}", tokens=f"{total_tokens:,}")
+
+
+def _format_percent(value: float) -> str:
+    if value.is_integer():
+        return str(int(value))
+    return f"{value:.1f}"

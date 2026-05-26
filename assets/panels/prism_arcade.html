@@ -1,0 +1,866 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --text: #f0e8ff;
+      --muted: #a08cc0;
+      --panel-bg: rgba(10, 0, 20, 0.25);
+      --warn: #ffe066;
+      --danger: #ff4f8a;
+      --tick: rgba(240, 232, 255, 0.16);
+      --rainbow: linear-gradient(90deg, hsl(0 100% 62%), hsl(45 100% 62%), hsl(100 100% 60%), hsl(175 100% 58%), hsl(235 100% 68%), hsl(300 100% 64%));
+      --holo-border: linear-gradient(135deg, #ff00ff, #00ffff, #ffff00, #ff00ff);
+      --shadow: 0 18px 46px rgba(0, 0, 0, 0.44);
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100vh;
+      margin: 0;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+      color: var(--text);
+      background: #07000f;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      overscroll-behavior: none;
+    }
+
+    body::before,
+    body::after {
+      content: "";
+      position: fixed;
+      inset: -32%;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    body::before {
+      background: conic-gradient(from 0deg, #ff00ff, #00ffff, #ffff00, #ff6600, #8844ff, #ff00ff);
+      opacity: 0.07;
+      filter: blur(18px);
+      animation: auraSpin 28s linear infinite;
+    }
+
+    body::after {
+      inset: 0;
+      background:
+        radial-gradient(circle at 18% 12%, rgba(255, 0, 255, 0.18), transparent 28%),
+        radial-gradient(circle at 78% 18%, rgba(0, 255, 255, 0.14), transparent 28%),
+        radial-gradient(circle at 52% 92%, rgba(255, 255, 0, 0.1), transparent 30%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 42%);
+      opacity: 0.8;
+    }
+
+    @keyframes auraSpin {
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes sweep {
+      from { transform: translateX(-120%); }
+      to { transform: translateX(220%); }
+    }
+
+    .prism-canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .viewport {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      padding: 10px;
+      overflow: hidden;
+      isolation: isolate;
+    }
+
+    .wrap {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: 100%;
+      height: 100%;
+    }
+
+    .card,
+    .footer,
+    .switch,
+    .range-chip,
+    .action {
+      border: 1.5px solid transparent;
+      background-image:
+        linear-gradient(#07000f, #07000f),
+        var(--holo-border);
+      background-origin: border-box;
+      background-clip: padding-box, border-box;
+    }
+
+    .card,
+    .footer {
+      position: relative;
+      overflow: hidden;
+      background-color: var(--panel-bg);
+      box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+
+    .card::before,
+    .footer::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(135deg, rgba(255, 0, 255, 0.12), transparent 32%, rgba(0, 255, 255, 0.12) 68%, transparent),
+        radial-gradient(circle at top right, rgba(255, 255, 0, 0.1), transparent 34%);
+      pointer-events: none;
+      mix-blend-mode: screen;
+    }
+
+    .card {
+      padding: 12px 14px;
+    }
+
+    .card[data-card="claude"],
+    .card[data-card="codex"] {
+      min-height: 224px;
+    }
+
+    .header {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .header img,
+    .prism-badge {
+      width: 28px;
+      height: 28px;
+      flex: none;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      background:
+        linear-gradient(135deg, rgba(255, 0, 255, 0.3), rgba(0, 255, 255, 0.18), rgba(255, 255, 0, 0.22)),
+        rgba(40, 0, 60, 0.22);
+      box-shadow: 0 0 18px rgba(255, 0, 255, 0.22), inset 0 0 14px rgba(255, 255, 255, 0.08);
+    }
+
+    .prism-badge {
+      display: grid;
+      place-items: center;
+      color: var(--text);
+      font-size: 16px;
+      font-weight: 800;
+    }
+
+    .header-copy {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.2;
+      font-weight: 600;
+      letter-spacing: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .switch,
+    .range-chip,
+    .action {
+      background-color: rgba(40, 0, 60, 0.25);
+      color: var(--text);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      box-shadow: 0 0 14px rgba(255, 0, 255, 0.18), inset 0 0 10px rgba(0, 255, 255, 0.08);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    .switch,
+    .range-chip {
+      flex: none;
+      min-height: 28px;
+      padding: 0 12px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    .switch:active,
+    .action:active,
+    .range-chip:active {
+      transform: translateY(1px);
+    }
+
+    .row {
+      position: relative;
+      z-index: 1;
+      padding: 10px 0 0;
+    }
+
+    .row + .row {
+      margin-top: 10px;
+      border-top: 1px solid rgba(240, 232, 255, 0.13);
+    }
+
+    .row-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 6px;
+    }
+
+    .row-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0;
+    }
+
+    .percent {
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .track {
+      position: relative;
+      height: 16px;
+      padding: 2px;
+      overflow: hidden;
+      border-radius: 999px;
+      border: 1px solid rgba(240, 232, 255, 0.18);
+      background: rgba(8, 0, 16, 0.84);
+      box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.48);
+    }
+
+    .track::before {
+      content: "";
+      position: absolute;
+      inset: 2px;
+      border-radius: inherit;
+      background:
+        repeating-linear-gradient(
+          90deg,
+          transparent 0 calc(10% - 1px),
+          var(--tick) calc(10% - 1px) 10%
+        );
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .track::after {
+      content: "";
+      position: absolute;
+      inset: 1px auto 1px 0;
+      width: 40%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.72), transparent);
+      animation: sweep 2.4s linear infinite;
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    .fill {
+      position: relative;
+      z-index: 1;
+      width: var(--value, 0%);
+      height: 100%;
+      border-radius: inherit;
+      background: var(--rainbow);
+      box-shadow: 0 0 20px rgba(255, 0, 255, 0.2), 0 0 18px rgba(0, 255, 255, 0.16);
+      transition: width 160ms ease-out, filter 160ms ease-out;
+    }
+
+    .reset {
+      margin-top: 5px;
+      font-size: 12px;
+      color: var(--muted);
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .reset[data-warning="true"] {
+      color: var(--danger);
+      font-weight: 600;
+    }
+
+    .row[data-available="false"] .percent,
+    .row[data-available="false"] .reset {
+      color: rgba(160, 140, 192, 0.7);
+    }
+
+    .projects-card {
+      flex: 1;
+      padding-bottom: 12px;
+    }
+
+    [data-project-list] {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      gap: 8px;
+    }
+
+    .proj-row {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(240, 232, 255, 0.14);
+      background: rgba(25, 0, 42, 0.56);
+    }
+
+    .proj-topline {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .proj-rank {
+      display: grid;
+      place-items: center;
+      width: 18px;
+      height: 18px;
+      border-radius: 6px;
+      background: linear-gradient(135deg, rgba(255, 0, 255, 0.24), rgba(0, 255, 255, 0.22));
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 700;
+      flex: none;
+    }
+
+    .proj-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .proj-tokens {
+      align-self: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    .proj-cost {
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .empty-state {
+      padding: 12px 4px 2px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .footer {
+      padding: 12px 14px;
+    }
+
+    .meta {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      gap: 4px;
+      font-size: 12px;
+      line-height: 1.15;
+      color: var(--muted);
+    }
+
+    .today {
+      position: relative;
+      z-index: 1;
+      margin-top: 5px;
+      padding-top: 5px;
+      border-top: 1px solid rgba(240, 232, 255, 0.13);
+      font-size: 13px;
+      line-height: 1.15;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .actions {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .action {
+      flex: 1;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+    }
+
+    .action[data-action="install"] {
+      display: none;
+    }
+
+    .footer .action[data-action="switch"] {
+      display: none;
+    }
+
+    .action[data-action="install"][data-visible="true"] {
+      display: inline-block;
+      flex: 1;
+    }
+  </style>
+</head>
+<body>
+  <canvas class="prism-canvas" aria-hidden="true"></canvas>
+
+  <div class="viewport">
+    <main class="wrap">
+      <section class="card" data-card="claude">
+        <header class="header">
+          <img src="{{CLAUDE_ICON}}" alt="">
+          <div class="header-copy">
+            <h1 data-i18n="claude_name">Claude Code</h1>
+          </div>
+          <button class="switch" data-action="switch" data-i18n="switch_panel">Switch Panel</button>
+        </header>
+        <div class="row" data-row="session"></div>
+        <div class="row" data-row="weekly"></div>
+      </section>
+
+      <section class="card" data-card="codex">
+        <header class="header">
+          <img src="{{CODEX_ICON}}" alt="">
+          <div class="header-copy">
+            <h1 data-i18n="codex_name">Codex</h1>
+          </div>
+        </header>
+        <div class="row" data-row="session"></div>
+        <div class="row" data-row="weekly"></div>
+      </section>
+
+      <section class="card projects-card" data-card="projects">
+        <header class="header">
+          <div class="prism-badge" aria-hidden="true">P</div>
+          <div class="header-copy">
+            <h1 data-i18n="projects_title">Project Usage</h1>
+          </div>
+          <button class="range-chip" data-action="toggle-project-range">Today</button>
+        </header>
+        <div data-project-list></div>
+      </section>
+
+      <section class="footer">
+        <div class="meta">
+          <div data-footer="rate">Rate: --</div>
+          <div data-footer="status">Status: Loading</div>
+        </div>
+        <div class="today" data-footer="today">Today: $0.00 (0 tokens)</div>
+        <div class="actions">
+          <button class="action primary" data-action="refresh" data-i18n="refresh_now">Refresh</button>
+          <button class="action" data-action="switch" data-i18n="switch_panel">Switch</button>
+          <button class="action" data-action="quit" data-i18n="quit">Quit</button>
+          <button class="action" data-action="install" data-i18n="install_hook">Install Hook</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="application/json" id="i18n-data">{{I18N_BUNDLE}}</script>
+  <script>
+    function loadI18nBundle() {
+      const fallback = {
+        en: {
+          claude_name: "Claude Code",
+          codex_name: "Codex",
+          projects_title: "Project Usage",
+          switch_panel: "Switch Panel",
+          refresh_now: "Refresh",
+          install_hook: "Install Hook",
+          quit: "Quit",
+          project_range_1d: "Today",
+          project_range_7d: "7 Days",
+          project_range_30d: "Month",
+          session_label: "Session",
+          weekly_label: "Weekly",
+          projects_empty: "No records",
+          reset_placeholder: "Resets in --",
+          rate_text: "Rate: {value}",
+          status_text: "Status: {value}",
+          today_text: "Today: ${cost} ({tokens} tokens)",
+        },
+      };
+      const node = document.getElementById("i18n-data");
+      const raw = node ? node.textContent.trim() : "";
+      if (!raw || raw.startsWith("{{")) return fallback;
+      try {
+        return JSON.parse(raw);
+      } catch (_error) {
+        return fallback;
+      }
+    }
+
+    const I18N = loadI18nBundle();
+    const FALLBACK_LANGUAGE = "en";
+    const root = document.documentElement;
+    let currentLanguage = "en";
+    let projectRange = "1d";
+    let latestState = null;
+
+    function languageTable(language) {
+      return I18N[language] || I18N[FALLBACK_LANGUAGE] || {};
+    }
+
+    function t(key, params = {}) {
+      const template = languageTable(currentLanguage)[key] || languageTable(FALLBACK_LANGUAGE)[key] || key;
+      return template.replace(/\{(\w+)\}/g, (_, name) => `${params[name] ?? ""}`);
+    }
+
+    function labels() {
+      return {
+        session: t("session_label"),
+        weekly: t("weekly_label"),
+      };
+    }
+
+    function projectRangeLabel(range) {
+      if (range === "7d") return t("project_range_7d");
+      if (range === "30d") return t("project_range_30d");
+      return t("project_range_1d");
+    }
+
+    function applyStaticText() {
+      document.documentElement.lang = currentLanguage === "zh-TW" ? "zh-Hant" : currentLanguage;
+      document.querySelectorAll("[data-i18n]").forEach((node) => {
+        const key = node.dataset.i18n;
+        if (key) node.textContent = t(key);
+      });
+      const rangeButton = document.querySelector('[data-action="toggle-project-range"]');
+      if (rangeButton) rangeButton.textContent = projectRangeLabel(projectRange);
+    }
+
+    window.usageSetLanguage = function usageSetLanguage(language) {
+      currentLanguage = I18N[language] ? language : FALLBACK_LANGUAGE;
+      applyStaticText();
+      if (latestState) {
+        window.usageApplyState({ ...latestState, language: currentLanguage });
+      }
+    };
+
+    function cssVar(name) {
+      return getComputedStyle(root).getPropertyValue(name).trim();
+    }
+
+    function colorFor(percent) {
+      if (typeof percent !== "number") return "";
+      if (percent >= 80) return cssVar("--danger");
+      if (percent >= 50) return cssVar("--warn");
+      return "";
+    }
+
+    function renderRow(card, key, row) {
+      const el = document.querySelector(`[data-card="${card}"] [data-row="${key}"]`);
+      if (!el) return;
+      const data = row || {
+        percent: null,
+        percentText: "--",
+        resetText: t("reset_placeholder"),
+        warning: false,
+        available: false,
+      };
+      const available = data.available === true && typeof data.percent === "number";
+      const alertColor = colorFor(data.percent);
+      el.dataset.available = available ? "true" : "false";
+      el.innerHTML = `
+        <div class="row-head">
+          <div class="row-title"></div>
+          <div class="percent"></div>
+        </div>
+        <div class="track"><div class="fill"></div></div>
+        <div class="reset"></div>
+      `;
+      const title = el.querySelector(".row-title");
+      const percent = el.querySelector(".percent");
+      const reset = el.querySelector(".reset");
+      const fill = el.querySelector(".fill");
+      if (!title || !percent || !reset || !fill) return;
+      title.textContent = labels()[key];
+      percent.textContent = data.percentText || "--";
+      reset.textContent = data.resetText || t("reset_placeholder");
+      reset.dataset.warning = data.warning === true ? "true" : "false";
+      percent.style.color = available && alertColor ? alertColor : "";
+      fill.style.setProperty("--value", available ? `${Math.max(0, Math.min(100, data.percent))}%` : "0%");
+      fill.style.filter = available && alertColor ? "saturate(1.25) brightness(1.12)" : "";
+    }
+
+    function applyCard(name, rows) {
+      renderRow(name, "session", rows && rows.session);
+      renderRow(name, "weekly", rows && rows.weekly);
+    }
+
+    function projectMarkup(project, index) {
+      const row = document.createElement("div");
+      const topline = document.createElement("div");
+      const rank = document.createElement("span");
+      const name = document.createElement("span");
+      const tokens = document.createElement("span");
+      const cost = document.createElement("span");
+      row.className = "proj-row";
+      topline.className = "proj-topline";
+      rank.className = "proj-rank";
+      name.className = "proj-name";
+      tokens.className = "proj-tokens";
+      cost.className = "proj-cost";
+      rank.textContent = `${index + 1}`;
+      name.textContent = project.name || "";
+      tokens.textContent = project.tokensText || "";
+      cost.textContent = project.costText || "";
+      topline.append(rank, name);
+      row.append(topline, tokens, cost);
+      return row;
+    }
+
+    function renderProjects(projects) {
+      const list = document.querySelector("[data-project-list]");
+      if (!list) return;
+      list.replaceChildren();
+      const items = (projects || []).slice(0, 3);
+      if (items.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "empty-state";
+        empty.textContent = t("projects_empty");
+        list.append(empty);
+        return;
+      }
+      items.forEach((project, index) => {
+        list.append(projectMarkup(project, index));
+      });
+    }
+
+    function applyFooter(footer) {
+      const rate = document.querySelector('[data-footer="rate"]');
+      const status = document.querySelector('[data-footer="status"]');
+      const today = document.querySelector('[data-footer="today"]');
+      const install = document.querySelector('[data-action="install"]');
+      if (rate) rate.textContent = footer.rate || t("rate_text", { value: "--" });
+      if (status) status.textContent = footer.status || t("status_text", { value: "--" });
+      if (today) today.textContent = footer.today || t("today_text", { cost: "0.00", tokens: "0" });
+      if (install) install.dataset.visible = footer.showInstall === true ? "true" : "false";
+    }
+
+    window.usageApplyState = function usageApplyState(state) {
+      currentLanguage = I18N[state.language] ? state.language : currentLanguage;
+      applyStaticText();
+      applyCard("claude", state.claude);
+      applyCard("codex", state.codex);
+      latestState = state;
+      renderProjects(
+        projectRange === "1d" ? state.projects
+        : projectRange === "7d" ? state.projects7d
+        : state.projects30d
+      );
+      applyFooter(state.footer || {});
+    };
+
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-action]");
+      if (!button) return;
+      if (button.dataset.action === "toggle-project-range") {
+        projectRange = projectRange === "1d" ? "7d" : projectRange === "7d" ? "30d" : "1d";
+        button.textContent = projectRangeLabel(projectRange);
+        if (latestState) {
+          renderProjects(
+            projectRange === "1d" ? latestState.projects
+            : projectRange === "7d" ? latestState.projects7d
+            : latestState.projects30d
+          );
+        }
+        return;
+      }
+      const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.usage;
+      if (bridge && typeof bridge.postMessage === "function") {
+        bridge.postMessage(button.dataset.action);
+      }
+    });
+
+    const canvas = document.querySelector(".prism-canvas");
+    const ctx = canvas.getContext("2d");
+    const shards = [];
+    const motes = [];
+    const shardCount = 26;
+    const moteCount = 64;
+    let width = 0;
+    let height = 0;
+    let pixelRatio = 1;
+
+    function hsl(hue, alpha) {
+      return `hsla(${hue}, 100%, 64%, ${alpha})`;
+    }
+
+    function resetShard(shard) {
+      shard.x = Math.random() * width;
+      shard.y = Math.random() * height;
+      shard.size = 18 + Math.random() * 34;
+      shard.sides = Math.random() > 0.48 ? 3 : 4;
+      shard.hue = Math.random() * 360;
+      shard.fillAlpha = 0.08 + Math.random() * 0.07;
+      shard.angle = Math.random() * Math.PI * 2;
+      shard.spin = (Math.random() - 0.5) * 0.004;
+      shard.dx = (Math.random() - 0.5) * 0.16;
+      shard.dy = (Math.random() - 0.5) * 0.12;
+    }
+
+    function resetMote(mote) {
+      mote.x = Math.random() * width;
+      mote.y = Math.random() * height;
+      mote.r = 0.8 + Math.random() * 1.8;
+      mote.hue = Math.random() * 360;
+      mote.phase = Math.random() * Math.PI * 2;
+      mote.dx = (Math.random() - 0.5) * 0.22;
+      mote.dy = (Math.random() - 0.5) * 0.2;
+      mote.baseAlpha = 0.18 + Math.random() * 0.35;
+    }
+
+    function resizeCanvas() {
+      pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = Math.floor(width * pixelRatio);
+      canvas.height = Math.floor(height * pixelRatio);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      if (shards.length === 0) {
+        for (let i = 0; i < shardCount; i += 1) {
+          const shard = {};
+          resetShard(shard);
+          shards.push(shard);
+        }
+      }
+      if (motes.length === 0) {
+        for (let i = 0; i < moteCount; i += 1) {
+          const mote = {};
+          resetMote(mote);
+          motes.push(mote);
+        }
+      }
+    }
+
+    function wrapPoint(item, margin) {
+      if (item.x < -margin) item.x = width + margin;
+      if (item.x > width + margin) item.x = -margin;
+      if (item.y < -margin) item.y = height + margin;
+      if (item.y > height + margin) item.y = -margin;
+    }
+
+    function drawShard(shard) {
+      const half = shard.size / 2;
+      ctx.save();
+      ctx.translate(shard.x, shard.y);
+      ctx.rotate(shard.angle);
+      ctx.beginPath();
+      if (shard.sides === 3) {
+        ctx.moveTo(0, -half);
+        ctx.lineTo(half * 0.9, half * 0.72);
+        ctx.lineTo(-half * 0.85, half * 0.68);
+      } else {
+        ctx.moveTo(0, -half);
+        ctx.lineTo(half * 0.75, 0);
+        ctx.lineTo(0, half);
+        ctx.lineTo(-half * 0.75, 0);
+      }
+      ctx.closePath();
+      ctx.fillStyle = hsl(shard.hue, shard.fillAlpha);
+      ctx.strokeStyle = hsl((shard.hue + 40) % 360, 0.4);
+      ctx.lineWidth = 0.4;
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawMote(mote, time) {
+      const alpha = mote.baseAlpha * (0.45 + Math.sin(time * 0.003 + mote.phase) * 0.28 + 0.35);
+      ctx.beginPath();
+      ctx.arc(mote.x, mote.y, mote.r, 0, Math.PI * 2);
+      ctx.fillStyle = hsl(mote.hue, Math.max(0.08, Math.min(0.75, alpha)));
+      ctx.shadowColor = hsl(mote.hue, 0.65);
+      ctx.shadowBlur = 7;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    function drawPrismField(time) {
+      ctx.clearRect(0, 0, width, height);
+      shards.forEach((shard) => {
+        shard.x += shard.dx;
+        shard.y += shard.dy;
+        shard.angle += shard.spin;
+        wrapPoint(shard, shard.size);
+        drawShard(shard);
+      });
+      motes.forEach((mote) => {
+        mote.x += mote.dx + Math.sin(time * 0.001 + mote.phase) * 0.05;
+        mote.y += mote.dy + Math.cos(time * 0.0011 + mote.phase) * 0.04;
+        wrapPoint(mote, 8);
+        drawMote(mote, time);
+      });
+    }
+
+    function animate(time) {
+      drawPrismField(time);
+      window.requestAnimationFrame(animate);
+    }
+
+    window.addEventListener("resize", resizeCanvas);
+    resizeCanvas();
+    window.requestAnimationFrame(animate);
+
+    window.usageApplyState({
+      language: "en",
+      claude: { session: {}, weekly: {} },
+      codex: { session: {}, weekly: {} },
+      projects: [],
+      projects7d: [],
+      projects30d: [],
+      footer: { rate: "Rate: --", status: "Status: Loading", today: "Today: $0.00 (0 tokens)", showInstall: false }
+    });
+  </script>
+</body>
+</html>

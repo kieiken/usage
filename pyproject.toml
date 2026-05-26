@@ -1,0 +1,92 @@
+[project]
+name = "usage"
+version = "0.9.1"
+description = "usage — macOS メニューバーに Claude Desktop / Claude Code / Codex の使用量を表示するツール"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE"]
+dependencies = [
+    "pyobjc-framework-Cocoa>=11.0",
+    "pyobjc-framework-Quartz>=11.0",
+    "pyobjc-framework-WebKit>=11.0",
+    "rich>=14.0.0,<15.0.0",
+]
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = [
+    "main",
+    "menubar",
+    "tui",
+    "pricing",
+    "history_loader",
+    "usage_rate",
+    "usage_statusline",
+    "setup_hook",
+    "login_item",
+    "usage_client",
+    "codex_loader",
+    "tui_sprite",
+    "claude_app_rate_loader",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "pytest>=8",
+    "pytest-cov>=5",
+]
+build = [
+    "py2app>=0.28",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+exclude = [
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "usage.egg-info",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+# usage_statusline.py は macOS 標準の python3 でも動くように標準ライブラリだけで書く。
+# そのため datetime.UTC ではなく timezone.utc を使う。
+"usage_statusline.py" = ["UP017"]
+"scripts/usage-claude-desktop-deriver.py" = ["UP017", "UP045"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_unused_configs = true
+pretty = true
+exclude = "^(build|dist)/"
+
+[[tool.mypy.overrides]]
+module = "rich.*"
+ignore_missing_imports = true
+
+# PyObjC C-extension frameworks ship without type stubs / py.typed marker.
+# `ignore_missing_imports` is the standard idiom for stubless modules — this
+# is NOT suppressing a real bug, just declaring the frameworks are untyped.
+[[tool.mypy.overrides]]
+module = ["AppKit", "Foundation", "objc", "Quartz", "WebKit"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
