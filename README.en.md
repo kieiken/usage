@@ -2,8 +2,8 @@
 
 日本語 · English
 
-[![CI](https://github.com/aqua5230/usage/actions/workflows/check.yml/badge.svg)](https://github.com/aqua5230/usage/actions/workflows/check.yml)
-[![Latest Release](https://img.shields.io/github/v/release/aqua5230/usage)](https://github.com/aqua5230/usage/releases/latest)
+[![CI](https://github.com/kieiken/usage/actions/workflows/check.yml/badge.svg)](https://github.com/kieiken/usage/actions/workflows/check.yml)
+[![Latest Release](https://img.shields.io/github/v/release/kieiken/usage)](https://github.com/kieiken/usage/releases/latest)
 [![Python](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://www.apple.com/macos/)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
@@ -72,14 +72,14 @@ If Codex isn't installed or the directory doesn't exist, that part of the UI hid
 
 ## Download the app
 
-Go to the [GitHub Releases page](https://github.com/aqua5230/usage/releases/latest) and download the latest `usage.app.zip`. Unzip it and move `usage.app` wherever you like (e.g. `/Applications`).
+Go to the [GitHub Releases page](https://github.com/kieiken/usage/releases/latest) and download the latest `usage.app.zip`. Unzip it and move `usage.app` wherever you like (e.g. `/Applications`).
 
 For a double-click installer, download and open `usage-installer.pkg` from GitHub Releases. It installs both `usage.app` and the Claude Desktop usage deriver LaunchAgent.
 
 One-command install:
 
 ```bash
-bash <(curl -fsSL https://github.com/aqua5230/usage/releases/latest/download/install.sh)
+bash <(curl -fsSL https://github.com/kieiken/usage/releases/latest/download/install.sh)
 ```
 
 This installs `usage.app` into `/Applications`, starts it, and installs the Claude Desktop usage deriver LaunchAgent that writes `~/.claude/usage-status-derived.json` once per minute.
@@ -97,7 +97,7 @@ If the button doesn't show, usage is already reading data (e.g. you previously i
 > If the in-app button doesn't work or you prefer the command line, run the following in Terminal (download first, inspect, then run):
 >
 > ```bash
-> curl -fsSL https://raw.githubusercontent.com/aqua5230/usage/v0.6.0/scripts/install-hook.sh -o /tmp/usage-install.sh
+> curl -fsSL https://raw.githubusercontent.com/kieiken/usage/main/scripts/install-hook.sh -o /tmp/usage-install.sh
 > cat /tmp/usage-install.sh   # review the script before running
 > bash /tmp/usage-install.sh
 > ```
@@ -105,11 +105,11 @@ If the button doesn't show, usage is already reading data (e.g. you previously i
 ## Download
 
 ```bash
-git clone https://github.com/aqua5230/usage.git
+git clone https://github.com/kieiken/usage.git
 cd usage
 ```
 
-If you don't use git, go to the [GitHub project page](https://github.com/aqua5230/usage), click the green **Code → Download ZIP**, then `cd` into the unzipped folder.
+If you don't use git, go to the [GitHub project page](https://github.com/kieiken/usage), click the green **Code → Download ZIP**, then `cd` into the unzipped folder.
 
 ## Set up the environment
 
